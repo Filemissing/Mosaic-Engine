@@ -11,10 +11,11 @@ namespace editor::editorWindows {
 
         core::Raymarcher* raymarcher = nullptr;
 
-        glm::ivec3 pendingRes = glm::ivec3(512);
-        glm::vec3 pendingWorldMin = glm::vec3(-30.0f);
-        glm::vec3 pendingWorldMax = glm::vec3(30.0f);
-        glm::ivec3 pendingBrickPoolDim = glm::ivec3(32);
+        // the volume is always a cube, so the window edits one value per setting (read from the raymarcher in OnEnable)
+        int pendingRes = 1024;
+        float pendingWorldMin = -100.0f;
+        float pendingWorldMax = 100.0f;
+        int pendingBrickPoolDim = 64;
 
     public:
         void OnEnable() override;

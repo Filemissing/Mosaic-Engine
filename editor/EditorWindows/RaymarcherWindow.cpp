@@ -7,8 +7,10 @@
 namespace editor::editorWindows {
     void RaymarcherWindow::OnEnable() {
         raymarcher = Editor::viewPort->GetRenderer()->GetRaymarcher();
-        pendingRes = raymarcher->GetResolution();
-        pendingBrickPoolDim = raymarcher->GetBrickPoolDim();
+        pendingRes = raymarcher->GetResolution().x;
+        pendingWorldMin = raymarcher->GetWorldMin().x;
+        pendingWorldMax = raymarcher->GetWorldMax().x;
+        pendingBrickPoolDim = raymarcher->GetBrickPoolDim().x;
     }
 
     void RaymarcherWindow::OnGUI() {
@@ -18,15 +20,16 @@ namespace editor::editorWindows {
         }
 
         ImGui::SeparatorText("Volume");
-        ImGui::DragInt3("Resolution", &pendingRes.x, 1.0f, 1);
-        ImGui::DragFloat3("World Min", &pendingWorldMin.x, 0.1f);
-        ImGui::DragFloat3("World Max", &pendingWorldMax.x, 0.1f);
-        ImGui::DragInt3("Brick pool dimensions", &pendingBrickPoolDim.x, 0.1f);
+        ImGui::DragInt("Resolution", &pendingRes, 1.0f, 1, 4096);
+        ImGui::DragFloat("World Min", &pendingWorldMin, 0.1f);
+        ImGui::DragFloat("World Max", &pendingWorldMax, 0.1f);
+        ImGui::DragInt("Brick pool dimensions", &pendingBrickPoolDim, 0.1f, 1, 256);
+        ImGui::SetItemTooltip("Pool size in bricks per axis; holds %d bricks", pendingBrickPoolDim * pendingBrickPoolDim * pendingBrickPoolDim);
 
         if (ImGui::Button("Apply Volume Settings")) {
-            raymarcher->SetBrickPoolDim(pendingBrickPoolDim);
-            raymarcher->SetWorldBounds(pendingWorldMin, pendingWorldMax);
-            raymarcher->EnsureVolumeSized(pendingRes);
+            raymarcher->SetBrickPoolDim(glm::ivec3(pendingBrickPoolDim));
+            raymarcher->SetWorldBounds(glm::vec3(pendingWorldMin), glm::vec3(pendingWorldMax));
+            raymarcher->EnsureVolumeSized(glm::ivec3(pendingRes));
             raymarcher->MarkDirty();
         }
 

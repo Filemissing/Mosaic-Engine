@@ -59,7 +59,7 @@ namespace core {
         static constexpr int HALO = 2 * BRICK_CORE;       // voxels of context around a chunk; also the distance truncation
 
         glm::ivec3 brickGridResolution = glm::ivec3(0); // number of bricks per axis
-        glm::ivec3 brickPoolDim = glm::ivec3(32); // the dimensions of the brick pool
+        glm::ivec3 brickPoolDim = glm::ivec3(64); // the dimensions of the brick pool
 
         GLuint freeListBuffer = 0; // SSBO binding 1: int freeCount, int droppedBricks, uint freeSlots[capacity]
 
@@ -195,6 +195,8 @@ namespace core {
         bool IsDirty() const { return dirty; }
 
         glm::ivec3 GetResolution() const { return resolution; }
+        glm::vec3 GetWorldMin() const { return worldMin; }
+        glm::vec3 GetWorldMax() const { return worldMax; }
         int GetChunkBricks() const { return chunkBricks; }
         int GetPoolCapacity() const { return brickPoolDim.x * brickPoolDim.y * brickPoolDim.z; }
 

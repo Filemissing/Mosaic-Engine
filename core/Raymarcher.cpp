@@ -91,8 +91,8 @@ namespace core {
         meshes.push_back(Mesh::generateQuad());
         quadModel = new Model(std::move(meshes));
 
-        SetWorldBounds(glm::vec3(-30), glm::vec3(30));
-        EnsureVolumeSized(glm::ivec3(512));
+        SetWorldBounds(glm::vec3(-100), glm::vec3(100));
+        EnsureVolumeSized(glm::ivec3(1024));
     }
     Raymarcher::~Raymarcher() {
         glDeleteQueries(2, m_timeQuery);
