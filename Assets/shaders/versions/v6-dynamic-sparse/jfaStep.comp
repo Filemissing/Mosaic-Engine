@@ -1,0 +1,41 @@
+#version 430 core
+
+layout (local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
+
+layout(rgba16f, binding = 0) uniform readonly  image3D srcSeeds;
+layout(rgba16f, binding = 1) uniform writeonly image3D dstSeeds;
+
+uniform int _Step;
+uniform vec3 _Resolution;
+
+void main() {
+    ivec3 texel = ivec3(gl_GlobalInvocationID);
+    if (any(greaterThanEqual(texel, _Resolution))) return; // guard: dispatch may overshoot resolution
+
+    vec4 best = imageLoad(srcSeeds, texel); // start with our own current best (may be invalid)
+    float bestDist = best.w > 0.5 ? distance(vec3(texel), best.xyz) : 1e20;
+
+    for (int dz = -1; dz <= 1; dz++) {
+        for (int dy = -1; dy <= 1; dy++) {
+            for (int dx = -1; dx <= 1; dx++) {
+                if (dx == 0 && dy == 0 && dz == 0) continue;
+
+                ivec3 neighborTexel = texel + ivec3(dx, dy, dz) * _Step;
+
+                // skip over texels that aren't actually in the resolution, this may happen when resolution is not a multiple of 8
+                if (any(lessThan(neighborTexel, ivec3(0))) || any(greaterThanEqual(neighborTexel, _Resolution))) continue;
+
+                vec4 candidate = imageLoad(srcSeeds, neighborTexel);
+                if (candidate.w < 0.5) continue; // neighbor has no valid seed yet, skip
+
+                float d = distance(vec3(texel), candidate.xyz); // IMPORTANT: distance calculated in texel space may be wrong if the world size/resolution isn't uniform on all axis
+                if (d < bestDist) {
+                    bestDist = d;
+                    best = candidate;
+                }
+            }
+        }
+    }
+
+    imageStore(dstSeeds, texel, best);
+}

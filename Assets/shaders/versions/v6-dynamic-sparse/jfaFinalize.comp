@@ -1,0 +1,52 @@
+#version 430 core
+
+layout (local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
+
+// one invocation per pool texel of the bricks being rebaked: (box bricks * BRICK_STORE) per axis
+layout(rgba16f, binding = 0) uniform readonly image3D finalSeeds; // chunk-local
+layout(r8, binding = 1) uniform readonly image3D signTex;         // chunk-local
+layout(r16f, binding = 2) uniform writeonly image3D brickPoolTexOut;
+layout(rgba32f, binding = 3) uniform readonly image3D lookupTex;
+layout(r16ui, binding = 4) uniform readonly uimage3D idTex;       // chunk-local
+layout(r16ui, binding = 5) uniform writeonly uimage3D brickIdOut;
+layout(r8, binding = 6) uniform readonly image3D dirtyTex;
+
+uniform vec3 _WorldMin;
+uniform vec3 _WorldMax;
+uniform vec3 _Resolution;
+
+uniform vec3 _BoxMin;
+uniform vec3 _BoxDim;
+uniform vec3 _ChunkVoxelOrigin;
+uniform float _Truncation; // world units; seeds further than the halo can't be trusted, so distances are clamped here
+
+uniform int BRICK_CORE;
+uniform int BRICK_STORE;
+
+void main() {
+    ivec3 gid = ivec3(gl_GlobalInvocationID);
+    ivec3 brickLocal = gid / BRICK_STORE;
+    if (any(greaterThanEqual(brickLocal, ivec3(_BoxDim)))) return;
+    ivec3 localOffset = gid - brickLocal * BRICK_STORE;
+    ivec3 brickIndex = ivec3(_BoxMin) + brickLocal;
+
+    if (imageLoad(dirtyTex, brickIndex).r < 0.5) return;
+    vec4 lookup = imageLoad(lookupTex, brickIndex);
+    if (lookup.w < 0.5) return; // inactive or pool full — no pool data to write
+
+    ivec3 sourceVoxel = brickIndex * BRICK_CORE + localOffset;
+    sourceVoxel = clamp(sourceVoxel, ivec3(0), ivec3(_Resolution) - ivec3(1));
+    ivec3 local = sourceVoxel - ivec3(_ChunkVoxelOrigin);
+
+    vec4 seed = imageLoad(finalSeeds, local);
+    vec3 voxelSize = (_WorldMax - _WorldMin) / _Resolution;
+    float dist = (seed.w > 0.5) ? length((vec3(local) - seed.xyz) * voxelSize) : _Truncation;
+    dist = min(dist, _Truncation);
+
+    float sign = imageLoad(signTex, local).r;
+    float signedDist = (sign > 0.5) ? -dist : dist;
+
+    ivec3 poolTexel = ivec3(lookup.xyz) + localOffset;
+    imageStore(brickPoolTexOut, poolTexel, vec4(signedDist));
+    imageStore(brickIdOut, poolTexel, imageLoad(idTex, local));
+}

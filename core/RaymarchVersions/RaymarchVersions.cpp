@@ -16,6 +16,7 @@
 #include "v2/Raymarcher.h"
 #include "v4/Raymarcher.h"
 #include "v5/Raymarcher.h"
+#include "v6/Raymarcher.h"
 
 namespace core {
     namespace {
@@ -111,7 +112,7 @@ namespace core {
             }
         };
 
-        // ---- v1 to v6: thin forwarding adapters ----
+        // ---- v1 to v7: thin forwarding adapters ----
         template <typename T>
         class VolumeAdapter : public RaymarchBackend {
         protected:
@@ -176,14 +177,25 @@ namespace core {
             void PrepareBake() override { raymarcher->BakeNoise(); }
         };
 
-        // the current Raymarcher: chunked sparse bake that rebakes only the bricks around changed primitives, every frame
-        class V6DynamicSparse : public VolumeAdapter<Raymarcher> {
+        // chunked sparse bake that rebakes only the bricks around changed primitives, every frame
+        class V6DynamicSparse : public VolumeAdapter<v6::Raymarcher> {
         public:
             const char* Id() const override { return "v6-dynamic-sparse"; }
             bool SupportsTerrain() const override { return true; }
             void PrepareBake() override { raymarcher->BakeNoise(); }
             void Update(const std::vector<Primitive*>& primitives, glm::vec3 cameraPos) override {
                 raymarcher->UpdateDynamic(primitives, cameraPos);
+            }
+        };
+
+        // the current Raymarcher: v6 plus per-primitive materials (textures, surface shaders) and the scene's lights
+        class V7Materials : public VolumeAdapter<Raymarcher> {
+        public:
+            const char* Id() const override { return "v7-materials"; }
+            bool SupportsTerrain() const override { return true; }
+            void PrepareBake() override { raymarcher->BakeNoise(); }
+            void Update(const std::vector<Primitive*>& primitives, glm::vec3 cameraPos) override {
+                raymarcher->UpdateDynamic(primitives, cameraPos); // also loads materials and rebuilds the march shader
             }
             Raymarcher* GetCurrentRaymarcher() override { return raymarcher; }
         };
@@ -203,8 +215,10 @@ namespace core {
                 [] { return std::unique_ptr<RaymarchBackend>(new V4Analytic()); }},
             {"v5-sparse-color", "v3-sparse plus a primitive-id color lookup in the brick pool", "8b11928", true,
                 [] { return std::unique_ptr<RaymarchBackend>(new V5SparseColor()); }},
-            {"v6-dynamic-sparse", "Chunked sparse bake with per-frame dynamic re-baking of changed primitives (current)", "current", true,
+            {"v6-dynamic-sparse", "Chunked sparse bake with per-frame dynamic re-baking of changed primitives", "3ad342e", true,
                 [] { return std::unique_ptr<RaymarchBackend>(new V6DynamicSparse()); }},
+            {"v7-materials", "v6 plus per-primitive materials (textures, surface shaders) lit by the scene's lights (current)", "current", true,
+                [] { return std::unique_ptr<RaymarchBackend>(new V7Materials()); }},
         };
         return versions;
     }

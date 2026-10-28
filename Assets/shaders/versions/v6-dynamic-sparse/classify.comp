@@ -1,0 +1,467 @@
+#version 430 core
+
+layout (local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
+
+// Two passes share this shader (and its mapScene):
+//  _CoarsePass == 0: classify one chunk — one invocation per scratch voxel (chunk core + halo), all outputs chunk-local
+//  _CoarsePass == 1: coarse pass of a full bake — one invocation per world brick, flags chunks that may hold a surface
+
+// chunk outputs (scratch-sized, chunk-local coordinates)
+layout(rgba16f, binding = 0) uniform writeonly image3D seedOut;
+layout(r8, binding = 1) uniform writeonly image3D signOut;
+layout(r8, binding = 2) uniform writeonly image3D brickFlagsOut; // 1 = brick contains a seed, covers core + 2 brick halo
+layout(r8, binding = 3) uniform writeonly image3D brickSignOut;  // world brick grid
+layout(r16ui, binding = 4) uniform writeonly uimage3D idOut;     // index of the nearest primitive, 0xFFFF = none
+layout(r16f, binding = 5) uniform writeonly image3D distOut;     // raw SDF value, for seedFix.comp
+
+// coarse output
+layout(std430, binding = 3) buffer ChunkFlags {
+    uint chunkHasCandidates[];
+};
+
+uniform int BRICK_CORE;
+uniform int _CoarsePass;
+
+// world bounds
+uniform vec3 _WorldMin;
+uniform vec3 _WorldMax;
+uniform vec3 _Resolution;
+
+// chunk pass
+uniform vec3 _ChunkVoxelOrigin; // world voxel of scratch texel (0,0,0)
+uniform vec3 _ChunkDim;         // scratch size in voxels
+uniform vec3 _FlagOrigin;       // world brick of brickFlags texel (0,0,0)
+uniform vec3 _FlagDim;
+uniform vec3 _CoreBrickMin;     // bricks being rebaked (inclusive)
+uniform vec3 _CoreBrickMax;
+
+// coarse pass
+uniform vec3 _GridResolution;
+uniform int _ChunkBricks;
+uniform vec3 _ChunkGridDim;
+uniform float _CoarseMargin;
+uniform float _Truncation;
+
+// noise textures
+uniform sampler2D _Noise2D;
+uniform sampler3D _Noise3D;
+uniform float _Noise2DFrequency;
+uniform float _Noise3DFrequency;
+
+// Noise cells have a fixed size in pattern space (world * 0.1, see TerrainSDF), independent of the world bounds and
+// of the texture resolution: a bigger world shows more terrain instead of stretching the same terrain flatter, and a
+// bigger noise texture only repeats less often. 60/64 matches the old look of a 60 unit world at frequency 1.
+// Frequency multiplies: higher = smaller, more frequent features.
+const float NOISE_CELL_SIZE = 60.0 / 64.0;
+const float NOISE2D_TEXELS_PER_CELL = 8.0; // must match noise2D.comp
+const float NOISE3D_TEXELS_PER_CELL = 4.0; // must match noise3D.comp
+
+// Cubic B-spline filtering from 4 bilinear taps. Plain bilinear filtering has a slope discontinuity at every texel
+// line, which shows as straight light/dark bands once the terrain is magnified; the B-spline is C2 continuous.
+float textureBSpline2D(sampler2D tex, vec2 uv) {
+    vec2 res = vec2(textureSize(tex, 0));
+    vec2 st = uv * res - 0.5;
+    vec2 i = floor(st);
+    vec2 f = st - i;
+
+    vec2 w0 = (1.0 - f) * (1.0 - f) * (1.0 - f) / 6.0;
+    vec2 w1 = (3.0 * f * f * f - 6.0 * f * f + 4.0) / 6.0;
+    vec2 w2 = (-3.0 * f * f * f + 3.0 * f * f + 3.0 * f + 1.0) / 6.0;
+    vec2 w3 = f * f * f / 6.0;
+
+    vec2 g0 = w0 + w1;
+    vec2 g1 = w2 + w3;
+    vec2 p0 = (i - 1.0 + w1 / g0 + 0.5) / res;
+    vec2 p1 = (i + 1.0 + w3 / g1 + 0.5) / res;
+
+    return g0.y * (g0.x * texture(tex, vec2(p0.x, p0.y)).r + g1.x * texture(tex, vec2(p1.x, p0.y)).r)
+         + g1.y * (g0.x * texture(tex, vec2(p0.x, p1.y)).r + g1.x * texture(tex, vec2(p1.x, p1.y)).r);
+}
+
+// same in 3D, 8 trilinear taps
+float textureBSpline3D(sampler3D tex, vec3 uvw) {
+    vec3 res = vec3(textureSize(tex, 0));
+    vec3 st = uvw * res - 0.5;
+    vec3 i = floor(st);
+    vec3 f = st - i;
+
+    vec3 w0 = (1.0 - f) * (1.0 - f) * (1.0 - f) / 6.0;
+    vec3 w1 = (3.0 * f * f * f - 6.0 * f * f + 4.0) / 6.0;
+    vec3 w2 = (-3.0 * f * f * f + 3.0 * f * f + 3.0 * f + 1.0) / 6.0;
+    vec3 w3 = f * f * f / 6.0;
+
+    vec3 g0 = w0 + w1;
+    vec3 g1 = w2 + w3;
+    vec3 p0 = (i - 1.0 + w1 / g0 + 0.5) / res;
+    vec3 p1 = (i + 1.0 + w3 / g1 + 0.5) / res;
+
+    float z0 = g0.y * (g0.x * texture(tex, vec3(p0.x, p0.y, p0.z)).r + g1.x * texture(tex, vec3(p1.x, p0.y, p0.z)).r)
+             + g1.y * (g0.x * texture(tex, vec3(p0.x, p1.y, p0.z)).r + g1.x * texture(tex, vec3(p1.x, p1.y, p0.z)).r);
+    float z1 = g0.y * (g0.x * texture(tex, vec3(p0.x, p0.y, p1.z)).r + g1.x * texture(tex, vec3(p1.x, p0.y, p1.z)).r)
+             + g1.y * (g0.x * texture(tex, vec3(p0.x, p1.y, p1.z)).r + g1.x * texture(tex, vec3(p1.x, p1.y, p1.z)).r);
+    return g0.z * z0 + g1.z * z1;
+}
+
+float sampleNoise2D(vec2 p)
+{
+    vec2 cells = max(round(vec2(textureSize(_Noise2D, 0)) / NOISE2D_TEXELS_PER_CELL), vec2(1.0));
+    vec2 uv = p * _Noise2DFrequency / (NOISE_CELL_SIZE * cells);
+    return textureBSpline2D(_Noise2D, fract(uv)); // the texture tiles (GL_REPEAT), fract only keeps uv small
+}
+
+float sampleNoise3D(vec3 p)
+{
+    vec3 cells = max(round(vec3(textureSize(_Noise3D, 0)) / NOISE3D_TEXELS_PER_CELL), vec3(1.0));
+    vec3 uvw = p * _Noise3DFrequency / (NOISE_CELL_SIZE * cells);
+    return textureBSpline3D(_Noise3D, fract(uvw));
+}
+
+// terrain uniforms
+uniform int _Octaves;
+uniform float _WarpStrength;
+uniform float _Lacunarity;
+uniform float _Persistence;
+uniform float _HeightScale;
+
+// -- Objects --
+#define TYPE_SPHERE    0
+#define TYPE_BOX       1
+#define TYPE_PYRAMID   2
+#define TYPE_CAPSULE   3
+#define TYPE_CYLINDER  4
+#define TYPE_TORUS     5
+#define TYPE_CONE      6
+#define TYPE_PLANE     7
+#define TYPE_TERRAIN   8
+
+struct Primitive {
+    vec4 position;
+    vec4 rotation;
+    vec4 scale;
+    vec4 data;
+    vec4 color;
+};
+
+layout(std430, binding = 0) readonly buffer PrimitiveBuffer {
+    Primitive primitives[]; // indexed by stable slot, free slots have type (position.w) -1
+};
+// slots that can affect this dispatch (culled per chunk on the CPU)
+layout(std430, binding = 2) readonly buffer PrimitiveIndexBuffer {
+    uint primIndices[];
+};
+uniform int primIndexCount;
+
+// ----------------------------------------------------------------
+// SDF primitives
+// ----------------------------------------------------------------
+float SphereSDF(vec3 p, vec3 center, float radius) {
+    return length(p - center) - radius;
+}
+
+float BoxSDF(vec3 p, vec3 center, vec3 data) {
+    vec3 q = abs(p - center) - data;
+    return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0);
+}
+
+float PyramidSDF(vec3 p, float height, float baseHalfSize) {
+    // Fold into the first quadrant — pyramid is 4-fold symmetric
+    p.xz = abs(p.xz);
+
+    // Slope of the face
+    float slope = baseHalfSize / height;
+
+    // Distance to the slanted face
+    float face = p.y * slope + p.x + p.z - baseHalfSize;
+    if (p.x < p.z) face = p.y * slope + p.z + p.x - baseHalfSize;
+
+    // Clamp to pyramid region
+    float d = max(face * inversesqrt(slope * slope + 2.0),
+    -p.y);              // bottom cap
+    d = max(d, p.y - height);        // top cap
+
+    return d;
+}
+// Capsule — data.x = radius, data.y = half length (along Y axis)
+float CapsuleSDF(vec3 p, float radius, float halfLen) {
+    p.y -= clamp(p.y, -halfLen, halfLen);
+    return length(p) - radius;
+}
+
+// Cylinder — data.x = radius, data.y = half height
+float CylinderSDF(vec3 p, float radius, float halfHeight) {
+    vec2 d = abs(vec2(length(p.xz), p.y)) - vec2(radius, halfHeight);
+    return min(max(d.x, d.y), 0.0) + length(max(d, 0.0));
+}
+
+// Torus — data.x = major radius (ring), data.y = minor radius (tube)
+float TorusSDF(vec3 p, float major, float minor) {
+    vec2 q = vec2(length(p.xz) - major, p.y);
+    return length(q) - minor;
+}
+
+// Cone — data.x = base radius, data.y = height (apex at +Y, base at -Y)
+float ConeSDF(vec3 p, float radius, float height) {
+    p.y -= height * 0.5;
+    vec2 q = vec2(length(p.xz), -p.y);
+    vec2 tip = vec2(radius, height);
+    vec2 a = q - tip * clamp(dot(q, tip) / dot(tip, tip), 0.0, 1.0);
+    vec2 b = q - tip * vec2(clamp(q.x / tip.x, 0.0, 1.0), 1.0);
+    float s = sign(tip.y * q.x - tip.x * q.y);
+    float d = min(dot(a, a), dot(b, b));
+    return sqrt(d) * sign(max(s, -sign(p.y + height * 0.5)));
+}
+
+// Infinite plane — data.xyz = normal, data.w would be offset
+// Since we only have vec3, pass normal in data and offset in scale.x
+float PlaneSDF(vec3 p, vec3 normal, float offset) {
+    return dot(p, normalize(normal)) - offset;
+}
+
+// Terrain generation
+vec3 warp(vec3 p, float warp_amplitude) {
+    float ox = sampleNoise3D(p);
+    float oy = sampleNoise3D(p + vec3(31.41, 15.92, 65.35));
+    float oz = sampleNoise3D(p + vec3(89.79, 32.38, 46.26));
+
+    vec3 offset = vec3(ox, oy, oz) * 2.0 - 1.0;
+
+    // scale down vertical impact
+    offset.y *= 0.3;
+
+    return p + offset * warp_amplitude;
+}
+
+float fbm(vec2 p, int octaves, float lucanarity, float persistence) {
+    float value = 0.0;
+    float amplitude = 0.5;
+    float frequency = 1.0;
+    for (int i = 0; i < octaves; i++) {
+        value += amplitude * sampleNoise2D(p * frequency);
+        frequency *= lucanarity;
+        amplitude *= persistence;
+    }
+    return value;
+}
+
+float pattern(vec3 point, int octaves, float lucanarity, float persistence, float warpStrength) {
+    // Warp the point in space
+    vec3 p = warp(point, warpStrength);
+
+    vec2 q = vec2(fbm(p.xz + vec2(0.0,0.0), octaves, lucanarity, persistence),
+    fbm(p.xz + vec2(5.2,1.3), octaves, lucanarity, persistence));
+
+    vec2 r = vec2(fbm(p.xz + 4.0 * q + vec2(1.7,9.2), octaves, lucanarity, persistence),
+    fbm(p.xz + 4.0 * q + vec2(8.3,2.8), octaves, lucanarity, persistence));
+
+    // Calculate base height
+    float baseHeight = fbm(p.xz + 4.0 * r, octaves, lucanarity, persistence);
+
+    return baseHeight + (point.y - p.y);
+}
+
+float TerrainSDF(vec3 p, int octaves, float heightScale, float lacunarity, float persistence) {
+    float h = pattern(p * 0.1, octaves, lacunarity, persistence, _WarpStrength) * heightScale;
+
+    return p.y - h;
+}
+
+// ----------------------------------------------------------------
+// Scene definition
+// ----------------------------------------------------------------
+struct Hit {
+    float dist;
+    int   id;   // which object was hit (for colouring)
+};
+
+mat3 eulerToMat3(vec3 euler) {
+    vec3 rad = radians(euler);
+
+    float cx = cos(rad.x), sx = sin(rad.x);
+    float cy = cos(rad.y), sy = sin(rad.y);
+    float cz = cos(rad.z), sz = sin(rad.z);
+
+    // ZYX order — most common convention (matches GLM default)
+    mat3 rx = mat3(
+    1,   0,   0,
+    0,  cx, -sx,
+    0,  sx,  cx
+    );
+    mat3 ry = mat3(
+    cy,  0,  sy,
+    0,  1,   0,
+    -sy,  0,  cy
+    );
+    mat3 rz = mat3(
+    cz, -sz,  0,
+    sz,  cz,  0,
+    0,   0,  1
+    );
+
+    return rz * ry * rx;
+}
+
+Hit mapScene(vec3 p) {
+    Hit h;
+    h.dist = 1e9;
+    h.id   = -1;
+
+    for (int k = 0; k < primIndexCount; k++) {
+        int i = int(primIndices[k]);
+        float d;
+        vec3 localP = eulerToMat3(primitives[i].rotation.xyz) * (p - primitives[i].position.xyz);
+        localP /= primitives[i].scale.xyz; // apply scale
+
+        int type = int(primitives[i].position.w);
+
+        if (type == TYPE_SPHERE) {
+            d = SphereSDF(localP, vec3(0.0), primitives[i].data.x);
+            d *= min(primitives[i].scale.x,
+            min(primitives[i].scale.y, primitives[i].scale.z));
+        }
+        else if (type == TYPE_BOX) {
+            d = BoxSDF(localP, vec3(0.0), primitives[i].data.xyz);
+            d *= min(primitives[i].scale.x,
+            min(primitives[i].scale.y, primitives[i].scale.z));
+        }
+        else if (type == TYPE_PYRAMID) {
+            d = PyramidSDF(localP, primitives[i].data.y, primitives[i].data.x);
+            d *= min(primitives[i].scale.x,
+            min(primitives[i].scale.y, primitives[i].scale.z));
+        }
+        else if (type == TYPE_CAPSULE) {
+            d = CapsuleSDF(localP,
+            primitives[i].data.x,
+            primitives[i].data.y);
+            d *= min(primitives[i].scale.x,
+            min(primitives[i].scale.y, primitives[i].scale.z));
+        }
+        else if (type == TYPE_CYLINDER) {
+            d = CylinderSDF(localP,
+            primitives[i].data.x,
+            primitives[i].data.y);
+            d *= min(primitives[i].scale.x,
+            min(primitives[i].scale.y, primitives[i].scale.z));
+        }
+        else if (type == TYPE_TORUS) {
+            d = TorusSDF(localP,
+            primitives[i].data.x,
+            primitives[i].data.y);
+            d *= min(primitives[i].scale.x,
+            min(primitives[i].scale.y, primitives[i].scale.z));
+        }
+        else if (type == TYPE_CONE) {
+            d = ConeSDF(localP,
+            primitives[i].data.x,
+            primitives[i].data.y);
+            d *= min(primitives[i].scale.x,
+            min(primitives[i].scale.y, primitives[i].scale.z));
+        }
+        else if (type == TYPE_PLANE) {
+            d = PlaneSDF(localP,
+            primitives[i].data.xyz,
+            primitives[i].scale.x);
+        }
+        else if (type == TYPE_TERRAIN) {
+            d = TerrainSDF(localP, _Octaves, _HeightScale, _Lacunarity, _Persistence);
+        }
+        else {
+            continue; // free slot or unknown type — contributes nothing
+        }
+
+        if (d < h.dist) {
+            h.dist = d;
+            h.id   = i; // stable slot index — march looks up the color from the same buffer
+        }
+    }
+
+    return h;
+}
+
+// Coarse pass: decide per world brick whether a surface can be near, from one SDF sample at its center, and flag
+// that brick's chunk. Every brick also gets its center sign. settle.comp then settles only the bricks of chunks
+// with no candidate at all; inside flagged chunks every brick is decided by the full classify, so one misjudged
+// brick (fine terrain detail can fool a single sample) can't turn into a solid block or a hole.
+void coarseMain() {
+    ivec3 brick = ivec3(gl_GlobalInvocationID);
+    if (any(greaterThanEqual(brick, ivec3(_GridResolution)))) return;
+
+    vec3 voxelSize = (_WorldMax - _WorldMin) / _Resolution;
+    vec3 center = _WorldMin + (vec3(brick * BRICK_CORE) + 0.5 * float(BRICK_CORE)) * voxelSize;
+    float halfDiagonal = 0.5 * length(float(BRICK_CORE) * voxelSize);
+
+    float d = mapScene(center).dist;
+
+    // Not every SDF here is an exact distance: terrain returns the vertical distance p.y - h, which on a slope is
+    // far larger than the real distance. Dividing by the gradient length turns it into the distance to the
+    // tangent plane (exact for planar slopes, unchanged for exact SDFs where |grad| = 1).
+    float e = 0.25 * halfDiagonal;
+    vec3 grad = vec3(
+        mapScene(center + vec3(e, 0, 0)).dist - mapScene(center - vec3(e, 0, 0)).dist,
+        mapScene(center + vec3(0, e, 0)).dist - mapScene(center - vec3(0, e, 0)).dist,
+        mapScene(center + vec3(0, 0, e)).dist - mapScene(center - vec3(0, 0, e)).dist) / (2.0 * e);
+    float distEstimate = abs(d) / max(length(grad), 1.0);
+
+    // _CoarseMargin > 1 leaves room for curvature the tangent plane doesn't capture; _Truncation covers the
+    // neighbour dilation, since bricks next to a surface brick also need pool data
+    bool candidate = distEstimate < _CoarseMargin * halfDiagonal + _Truncation;
+
+    imageStore(brickSignOut, brick, vec4((d <= 0.0) ? 1.0 : 0.0));
+    if (candidate) {
+        ivec3 chunk = brick / _ChunkBricks;
+        ivec3 cg = ivec3(_ChunkGridDim);
+        chunkHasCandidates[chunk.x + chunk.y * cg.x + chunk.z * cg.x * cg.y] = 1u;
+    }
+}
+
+void main() {
+    if (_CoarsePass == 1) { coarseMain(); return; }
+
+    ivec3 local = ivec3(gl_GlobalInvocationID);
+    if (any(greaterThanEqual(local, ivec3(_ChunkDim)))) return; // dispatch may overshoot the scratch region
+    ivec3 texel = local + ivec3(_ChunkVoxelOrigin); // world voxel
+
+    vec3 uvw = (vec3(texel) + 0.5) / vec3(_Resolution);
+    vec3 worldPos = _WorldMin + uvw * (_WorldMax - _WorldMin);
+    float voxelSize = length((_WorldMax - _WorldMin) / _Resolution); // gets the maximum size of a voxel (corner to corner)
+
+    Hit h = mapScene(worldPos);
+    float m_sign = (h.dist <= 0.0) ? 1.0 : 0.0;           // every voxel gets this
+    float isSeed = (abs(h.dist) < voxelSize) ? 1.0 : 0.0; // only near-surface voxels
+
+    vec3 refinedTexel = vec3(texel); // fallback stays, but should rarely trigger now
+
+    if (isSeed > 0.5) {
+        float eps = voxelSize * 0.25;
+
+        float dx = mapScene(worldPos + vec3(eps,0,0)).dist - mapScene(worldPos - vec3(eps,0,0)).dist;
+        float dy = mapScene(worldPos + vec3(0,eps,0)).dist - mapScene(worldPos - vec3(0,eps,0)).dist;
+        float dz = mapScene(worldPos + vec3(0,0,eps)).dist - mapScene(worldPos - vec3(0,0,eps)).dist;
+        vec3 grad = vec3(dx, dy, dz);
+
+        if (length(grad) > 1e-6) {
+            vec3 gradN = normalize(grad);
+            vec3 surfaceWorldPos = worldPos - h.dist * gradN; // walk back along the gradient to the zero-crossing
+
+            vec3 surfaceUvw = (surfaceWorldPos - _WorldMin) / (_WorldMax - _WorldMin);
+            refinedTexel = surfaceUvw * vec3(_Resolution) - 0.5;
+        }
+    }
+
+    // seeds are stored chunk-local: small coordinates keep their precision in RGBA16F
+    imageStore(seedOut, local, vec4(refinedTexel - _ChunkVoxelOrigin, isSeed));
+    imageStore(signOut, local, vec4(m_sign));
+    imageStore(distOut, local, vec4(clamp(h.dist, -60000.0, 60000.0))); // stay inside the R16F range
+    imageStore(idOut, local, uvec4(h.id < 0 ? 0xFFFFu : uint(h.id)));
+
+    ivec3 brickIndex = texel / BRICK_CORE;
+    if (isSeed > 0.5) {
+        ivec3 flag = brickIndex - ivec3(_FlagOrigin);
+        if (all(greaterThanEqual(flag, ivec3(0))) && all(lessThan(flag, ivec3(_FlagDim))))
+            imageStore(brickFlagsOut, flag, vec4(1.0));
+    }
+    // only writes the bricks origin, this works because it's only used for bricks that aren't near a surface and thus have a uniform sign
+    if (texel == brickIndex * BRICK_CORE
+        && all(greaterThanEqual(brickIndex, ivec3(_CoreBrickMin))) && all(lessThanEqual(brickIndex, ivec3(_CoreBrickMax)))) {
+        imageStore(brickSignOut, brickIndex, vec4(m_sign));
+    }
+}

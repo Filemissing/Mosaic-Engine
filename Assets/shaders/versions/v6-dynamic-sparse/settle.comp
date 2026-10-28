@@ -1,0 +1,33 @@
+#version 430 core
+layout (local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
+
+// Second half of the coarse pass of a full bake, one invocation per world brick.
+// Bricks of chunks without any candidate are settled as empty/solid from their center sign and leave the dirty set;
+// bricks of flagged chunks lose their old slot reference and stay dirty for the chunk pipeline.
+layout(r8, binding = 0) uniform readonly image3D brickSignTex;
+layout(rgba32f, binding = 1) uniform writeonly image3D lookupOut;
+layout(r8, binding = 2) uniform writeonly image3D dirtyOut;
+
+layout(std430, binding = 3) readonly buffer ChunkFlags {
+    uint chunkHasCandidates[];
+};
+
+uniform vec3 _GridResolution;
+uniform int _ChunkBricks;
+uniform vec3 _ChunkGridDim;
+
+void main() {
+    ivec3 brick = ivec3(gl_GlobalInvocationID);
+    if (any(greaterThanEqual(brick, ivec3(_GridResolution)))) return;
+
+    ivec3 chunk = brick / _ChunkBricks;
+    ivec3 cg = ivec3(_ChunkGridDim);
+    if (chunkHasCandidates[chunk.x + chunk.y * cg.x + chunk.z * cg.x * cg.y] != 0u) {
+        imageStore(lookupOut, brick, vec4(0.0)); // the free list was reset, so no slot yet — allocate decides
+        return;
+    }
+
+    float m_sign = imageLoad(brickSignTex, brick).r;
+    imageStore(lookupOut, brick, vec4(0.0, 0.0, 0.0, m_sign > 0.5 ? -1.0 : 0.0)); // solid : empty
+    imageStore(dirtyOut, brick, vec4(0.0));
+}

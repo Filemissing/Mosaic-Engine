@@ -1,0 +1,606 @@
+{
+    "ambientColor": {
+        "r": 0.75,
+        "g": 0.8,
+        "b": 1.0,
+        "a": 1.0
+    },
+    "ambientIntensity": 0.3,
+    "name": "Benchmark_full",
+    "objects": [
+        {
+            "name": "Camera",
+            "transform": {
+                "children": [],
+                "position": {
+                    "x": -40.0,
+                    "y": 20.0,
+                    "z": 0.0
+                },
+                "rotation": {
+                    "x": -25.0,
+                    "y": -90.0,
+                    "z": 0.0
+                },
+                "scale": {
+                    "x": 1.0,
+                    "y": 1.0,
+                    "z": 1.0
+                },
+                "type": "Transform"
+            },
+            "components": [
+                {
+                    "type": "Camera",
+                    "width": 1280,
+                    "height": 720
+                },
+                {
+                    "type": "PlayerController",
+                    "moveSpeed": 20.0,
+                    "rotateSpeed": 10000.0
+                }
+            ]
+        },
+        {
+            "name": "Sun",
+            "transform": {
+                "children": [],
+                "position": {
+                    "x": 0.0,
+                    "y": 40.0,
+                    "z": 0.0
+                },
+                "rotation": {
+                    "x": 53.0,
+                    "y": -149.0,
+                    "z": 0.0
+                },
+                "scale": {
+                    "x": 1.0,
+                    "y": 1.0,
+                    "z": 1.0
+                },
+                "type": "Transform"
+            },
+            "components": [
+                {
+                    "type": "Light",
+                    "lightType": 0,
+                    "attenuation": 1.0,
+                    "color": {
+                        "r": 1.0,
+                        "g": 0.92,
+                        "b": 0.78,
+                        "a": 1.0
+                    }
+                }
+            ]
+        },
+        {
+            "name": "WarmPointLight",
+            "transform": {
+                "children": [],
+                "position": {
+                    "x": -6.0,
+                    "y": 6.0,
+                    "z": 6.0
+                },
+                "rotation": {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 0.0
+                },
+                "scale": {
+                    "x": 1.0,
+                    "y": 1.0,
+                    "z": 1.0
+                },
+                "type": "Transform"
+            },
+            "components": [
+                {
+                    "type": "Light",
+                    "lightType": 1,
+                    "attenuation": 0.06,
+                    "color": {
+                        "r": 1.0,
+                        "g": 0.6,
+                        "b": 0.3,
+                        "a": 1.0
+                    }
+                }
+            ]
+        },
+        {
+            "name": "CyanPointLight",
+            "transform": {
+                "children": [],
+                "position": {
+                    "x": 8.0,
+                    "y": 4.0,
+                    "z": -6.0
+                },
+                "rotation": {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 0.0
+                },
+                "scale": {
+                    "x": 1.0,
+                    "y": 1.0,
+                    "z": 1.0
+                },
+                "type": "Transform"
+            },
+            "components": [
+                {
+                    "type": "Light",
+                    "lightType": 1,
+                    "attenuation": 0.06,
+                    "color": {
+                        "r": 0.2,
+                        "g": 0.9,
+                        "b": 1.0,
+                        "a": 1.0
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Ground",
+            "transform": {
+                "children": [],
+                "position": {
+                    "x": 0.0,
+                    "y": -8.0,
+                    "z": 0.0
+                },
+                "rotation": {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 0.0
+                },
+                "scale": {
+                    "x": 1.0,
+                    "y": 1.0,
+                    "z": 1.0
+                },
+                "type": "Transform"
+            },
+            "components": [
+                {
+                    "type": "Primitive",
+                    "primitiveType": 1,
+                    "color": {
+                        "r": 0.6,
+                        "g": 0.6,
+                        "b": 0.6
+                    },
+                    "halfExtents": {
+                        "x": 20.0,
+                        "y": 1.0,
+                        "z": 20.0
+                    },
+                    "material": "Assets/Materials/Sand.json"
+                }
+            ]
+        },
+        {
+            "name": "MarbleSphere",
+            "transform": {
+                "children": [],
+                "position": {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 0.0
+                },
+                "rotation": {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 0.0
+                },
+                "scale": {
+                    "x": 1.0,
+                    "y": 1.0,
+                    "z": 1.0
+                },
+                "type": "Transform"
+            },
+            "components": [
+                {
+                    "type": "Primitive",
+                    "primitiveType": 0,
+                    "color": {
+                        "r": 1.0,
+                        "g": 0.3,
+                        "b": 0.3
+                    },
+                    "halfExtents": {
+                        "x": 3.0,
+                        "y": 3.0,
+                        "z": 3.0
+                    },
+                    "material": "Assets/Materials/Marble.json"
+                }
+            ]
+        },
+        {
+            "name": "MesaSphere",
+            "transform": {
+                "children": [],
+                "position": {
+                    "x": 10.0,
+                    "y": 1.0,
+                    "z": -8.0
+                },
+                "rotation": {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 0.0
+                },
+                "scale": {
+                    "x": 1.0,
+                    "y": 1.0,
+                    "z": 1.0
+                },
+                "type": "Transform"
+            },
+            "components": [
+                {
+                    "type": "Primitive",
+                    "primitiveType": 0,
+                    "color": {
+                        "r": 0.3,
+                        "g": 0.3,
+                        "b": 1.0
+                    },
+                    "halfExtents": {
+                        "x": 4.0,
+                        "y": 4.0,
+                        "z": 4.0
+                    },
+                    "material": "Assets/Materials/Mesa.json"
+                }
+            ]
+        },
+        {
+            "name": "MetalBox",
+            "transform": {
+                "children": [],
+                "position": {
+                    "x": 8.0,
+                    "y": -4.0,
+                    "z": 8.0
+                },
+                "rotation": {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 0.0
+                },
+                "scale": {
+                    "x": 1.0,
+                    "y": 1.0,
+                    "z": 1.0
+                },
+                "type": "Transform"
+            },
+            "components": [
+                {
+                    "type": "Primitive",
+                    "primitiveType": 1,
+                    "color": {
+                        "r": 1.0,
+                        "g": 1.0,
+                        "b": 0.3
+                    },
+                    "halfExtents": {
+                        "x": 2.0,
+                        "y": 3.0,
+                        "z": 2.0
+                    },
+                    "material": "Assets/Materials/Metal.json"
+                }
+            ]
+        },
+        {
+            "name": "SandstonePyramid",
+            "transform": {
+                "children": [],
+                "position": {
+                    "x": -8.0,
+                    "y": -7.0,
+                    "z": -8.0
+                },
+                "rotation": {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 0.0
+                },
+                "scale": {
+                    "x": 1.0,
+                    "y": 1.0,
+                    "z": 1.0
+                },
+                "type": "Transform"
+            },
+            "components": [
+                {
+                    "type": "Primitive",
+                    "primitiveType": 2,
+                    "color": {
+                        "r": 1.0,
+                        "g": 0.6,
+                        "b": 0.2
+                    },
+                    "halfExtents": {
+                        "x": 3.0,
+                        "y": 5.0,
+                        "z": 3.0
+                    },
+                    "material": "Assets/Materials/Sandstone.json"
+                }
+            ]
+        },
+        {
+            "name": "PosterCapsule",
+            "transform": {
+                "children": [],
+                "position": {
+                    "x": 14.0,
+                    "y": -2.0,
+                    "z": 2.0
+                },
+                "rotation": {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 0.0
+                },
+                "scale": {
+                    "x": 1.0,
+                    "y": 1.0,
+                    "z": 1.0
+                },
+                "type": "Transform"
+            },
+            "components": [
+                {
+                    "type": "Primitive",
+                    "primitiveType": 3,
+                    "color": {
+                        "r": 0.8,
+                        "g": 0.3,
+                        "b": 1.0
+                    },
+                    "halfExtents": {
+                        "x": 1.0,
+                        "y": 3.0,
+                        "z": 1.0
+                    },
+                    "material": "Assets/Materials/CMGaTo.json"
+                }
+            ]
+        },
+        {
+            "name": "StrataCylinder",
+            "transform": {
+                "children": [],
+                "position": {
+                    "x": -14.0,
+                    "y": -4.0,
+                    "z": 0.0
+                },
+                "rotation": {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 0.0
+                },
+                "scale": {
+                    "x": 1.0,
+                    "y": 1.0,
+                    "z": 1.0
+                },
+                "type": "Transform"
+            },
+            "components": [
+                {
+                    "type": "Primitive",
+                    "primitiveType": 4,
+                    "color": {
+                        "r": 0.3,
+                        "g": 1.0,
+                        "b": 1.0
+                    },
+                    "halfExtents": {
+                        "x": 2.0,
+                        "y": 3.0,
+                        "z": 2.0
+                    },
+                    "material": "Assets/Materials/SandstoneStrata.json"
+                }
+            ]
+        },
+        {
+            "name": "GlowTorus",
+            "transform": {
+                "children": [],
+                "position": {
+                    "x": 0.0,
+                    "y": -5.0,
+                    "z": 12.0
+                },
+                "rotation": {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 0.0
+                },
+                "scale": {
+                    "x": 1.0,
+                    "y": 1.0,
+                    "z": 1.0
+                },
+                "type": "Transform"
+            },
+            "components": [
+                {
+                    "type": "Primitive",
+                    "primitiveType": 5,
+                    "color": {
+                        "r": 1.0,
+                        "g": 0.3,
+                        "b": 0.8
+                    },
+                    "halfExtents": {
+                        "x": 3.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "material": "Assets/Materials/GlowStripes.json"
+                }
+            ]
+        },
+        {
+            "name": "PlainCone",
+            "transform": {
+                "children": [],
+                "position": {
+                    "x": 0.0,
+                    "y": -3.0,
+                    "z": -13.0
+                },
+                "rotation": {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 0.0
+                },
+                "scale": {
+                    "x": 1.0,
+                    "y": 1.0,
+                    "z": 1.0
+                },
+                "type": "Transform"
+            },
+            "components": [
+                {
+                    "type": "Primitive",
+                    "primitiveType": 6,
+                    "color": {
+                        "r": 0.9,
+                        "g": 0.9,
+                        "b": 0.9
+                    },
+                    "halfExtents": {
+                        "x": 2.0,
+                        "y": 4.0,
+                        "z": 2.0
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Suzanne",
+            "transform": {
+                "children": [],
+                "position": {
+                    "x": -6.0,
+                    "y": -3.0,
+                    "z": 4.0
+                },
+                "rotation": {
+                    "x": 0.0,
+                    "y": 35.0,
+                    "z": 0.0
+                },
+                "scale": {
+                    "x": 2.5,
+                    "y": 2.5,
+                    "z": 2.5
+                },
+                "type": "Transform"
+            },
+            "components": [
+                {
+                    "type": "MeshRenderer",
+                    "model": "Assets/models/nonormalmonkey.obj",
+                    "material": {
+                        "vertex": "Assets/shaders/vertex.vert",
+                        "fragment": "Assets/shaders/lit.frag",
+                        "smoothness": 200.0,
+                        "metallic": 0.4,
+                        "texture": "Assets/textures/CMGaTo_crop.png"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "MarbleBall",
+            "transform": {
+                "children": [],
+                "position": {
+                    "x": 5.0,
+                    "y": -4.5,
+                    "z": -2.0
+                },
+                "rotation": {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 0.0
+                },
+                "scale": {
+                    "x": 1.5,
+                    "y": 1.5,
+                    "z": 1.5
+                },
+                "type": "Transform"
+            },
+            "components": [
+                {
+                    "type": "MeshRenderer",
+                    "model": "Assets/models/sphere.obj",
+                    "material": {
+                        "vertex": "Assets/shaders/vertex.vert",
+                        "fragment": "Assets/shaders/lit.frag",
+                        "smoothness": 48.0,
+                        "metallic": 0.0,
+                        "texture": "Assets/textures/Marble.png"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "MetalBall",
+            "transform": {
+                "children": [],
+                "position": {
+                    "x": -10.0,
+                    "y": 1.0,
+                    "z": -5.0
+                },
+                "rotation": {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 0.0
+                },
+                "scale": {
+                    "x": 2.0,
+                    "y": 2.0,
+                    "z": 2.0
+                },
+                "type": "Transform"
+            },
+            "components": [
+                {
+                    "type": "MeshRenderer",
+                    "model": "Assets/models/sphere.obj",
+                    "material": {
+                        "vertex": "Assets/shaders/vertex.vert",
+                        "fragment": "Assets/shaders/lit.frag",
+                        "smoothness": 96.0,
+                        "metallic": 0.8,
+                        "texture": "Assets/textures/Metal.png"
+                    }
+                }
+            ]
+        }
+    ]
+}
