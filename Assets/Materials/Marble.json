@@ -1,0 +1,9 @@
+{
+    "tint": [1.0, 1.0, 1.0],
+    "smoothness": 48.0,
+    "metallic": 0.0,
+    "albedoTexture": "Assets/textures/Marble.png",
+    "textureScale": 0.5,
+    "blendSharpness": 4.0,
+    "objectSpace": true
+}

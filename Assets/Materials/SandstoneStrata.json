@@ -1,0 +1,6 @@
+{
+    "tint": [0.78, 0.45, 0.30],
+    "smoothness": 6.0,
+    "metallic": 0.0,
+    "surfaceShader": "Assets/shaders/raymarching/surfaces/sandstoneStrata.glsl"
+}

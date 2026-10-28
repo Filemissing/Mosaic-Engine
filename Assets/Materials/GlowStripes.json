@@ -1,0 +1,6 @@
+{
+    "tint": [0.25, 0.25, 0.3],
+    "smoothness": 32.0,
+    "metallic": 0.2,
+    "surfaceShader": "Assets/shaders/raymarching/surfaces/glowStripes.glsl"
+}

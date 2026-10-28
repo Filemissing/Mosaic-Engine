@@ -1,0 +1,12 @@
+{
+    "tint": [1.0, 0.9, 0.8],
+    "smoothness": 8.0,
+    "metallic": 0.0,
+    "albedoTexture": "Assets/textures/Rock061_Color.jpg",
+    "normalTexture": "Assets/textures/Rock061_NormalGL.jpg",
+    "roughnessTexture": "Assets/textures/Rock061_Roughness.jpg",
+    "normalStrength": 1.0,
+    "textureScale": 0.06,
+    "blendSharpness": 6.0,
+    "objectSpace": true
+}

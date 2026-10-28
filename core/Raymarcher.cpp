@@ -66,6 +66,7 @@ namespace core {
         marchMaterial = new Material(
             "Assets/shaders/PostProcessing/viewSpace.vert",
             "Assets/shaders/raymarching/march.frag");
+        materialLibrary = new RaymarchMaterialLibrary();
         debugSliceMaterial = new Material(
             "Assets/shaders/PostProcessing/viewSpace.vert",
             "Assets/shaders/debug/slice_view.frag");
@@ -106,6 +107,7 @@ namespace core {
         DestroyNoiseResources();
 
         delete marchMaterial;
+        delete materialLibrary;
         delete debugSliceMaterial;
         delete debugTextureMaterial;
         delete quadModel;
@@ -286,7 +288,10 @@ namespace core {
 
         gpuSlots.assign(std::max<size_t>(slots.size(), 1), GPUPrimitive{});
         for (auto& g : gpuSlots) g.position.w = -1; // free slot
-        for (const auto& [p, s] : slotOf) gpuSlots[s] = p->GetGPUPrimitive();
+        for (const auto& [p, s] : slotOf) {
+            gpuSlots[s] = p->GetGPUPrimitive();
+            gpuSlots[s].color.w = static_cast<float>(materialLibrary->IndexOf(p->materialPath)); // read by march.frag
+        }
     }
     void Raymarcher::UploadPrimitiveSlots() {
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, primitivesBuffer);
@@ -658,8 +663,21 @@ namespace core {
         }
     }
 
+    // Materials only affect shading, never the baked volume: edits apply without a rebake. A new set of surface
+    // snippets (or an edited snippet file) rebuilds the march program; if it doesn't compile the old one stays.
+    void Raymarcher::UpdateMaterials() {
+        materialLibrary->Update();
+        if (!materialLibrary->ShaderChanged()) return;
+        GLuint program = materialLibrary->BuildMarchProgram("Assets/shaders/PostProcessing/viewSpace.vert",
+                                                            "Assets/shaders/raymarching/march.frag");
+        if (!program) return;
+        delete marchMaterial;
+        marchMaterial = new Material(program);
+    }
+
     void Raymarcher::UpdateDynamic(const std::vector<Primitive*>& primitives, glm::vec3 cameraPos) {
         SyncPrimitiveSlots(primitives); // also stamps the old bounds of removed primitives
+        UpdateMaterials();
 
         for (const auto& [p, s] : slotOf) {
             PrimitiveSlot& slot = slots[s];
@@ -891,12 +909,14 @@ namespace core {
         marchMaterial->SetFloat("_MaxDist", maxDist);
         marchMaterial->SetFloat("_SurfDist", surfDist);
         marchMaterial->SetFloat("_ColorBlend", colorBlend);
+        marchMaterial->SetFloat("_Time", static_cast<float>(glfwGetTime()));
 
         // the baked ids index the primitive slots; UpdateDynamic re-uploads them every frame so color edits show without a rebake
         marchMaterial->SetInt("primitiveCount", static_cast<int>(gpuSlots.size()));
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, primitivesBuffer);
 
         marchMaterial->Bind();
+        materialLibrary->Bind(marchMaterial->GetShaderProgram());
         quadModel->render();
 
         glBindFramebuffer(GL_FRAMEBUFFER, 0);

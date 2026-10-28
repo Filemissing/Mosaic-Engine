@@ -1,0 +1,8 @@
+{
+    "layered": true,
+    "flatMaterial": "Assets/Materials/Sand.json",
+    "steepMaterial": "Assets/Materials/Sandstone.json",
+    "slopeStart": 0.35,
+    "slopeEnd": 0.55,
+    "layerNoise": 0.15
+}

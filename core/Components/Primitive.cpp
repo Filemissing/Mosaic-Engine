@@ -7,6 +7,7 @@
 #include "imgui.h"
 #include "../GameObject.h"
 #include "../Assets/Scene.h"
+#include "../RaymarchMaterialLibrary.h"
 
 namespace core {
     void Primitive::Start() {
@@ -57,6 +58,18 @@ namespace core {
 
         ImGui::SliderFloat3("color", glm::value_ptr(color), 0.0f, 1.0f);
         ImGui::DragFloat3("halfExtents", glm::value_ptr(data));
+
+        // material (shading only, no rebake needed)
+        ImGui::SeparatorText("Material");
+        if (ImGui::BeginCombo("material", materialPath.empty() ? "(default)" : materialPath.c_str())) {
+            if (ImGui::Selectable("(default)", materialPath.empty())) materialPath.clear();
+            for (const auto& file : RaymarchMaterialLibrary::ListMaterialFiles()) {
+                if (ImGui::Selectable(file.c_str(), file == materialPath)) materialPath = file;
+            }
+            ImGui::EndCombo();
+        }
+        if (RaymarchMaterialLibrary* library = RaymarchMaterialLibrary::Instance())
+            library->DrawMaterialEditor(materialPath);
     }
 
     nlohmann::json Primitive::Serialize() {
@@ -74,6 +87,8 @@ namespace core {
         json["halfExtents"]["y"] = data.y;
         json["halfExtents"]["z"] = data.z;
 
+        if (!materialPath.empty()) json["material"] = materialPath;
+
         return json;
     }
     void Primitive::Deserialize(const nlohmann::json& json) {
@@ -90,5 +105,7 @@ namespace core {
             json["halfExtents"]["y"],
             json["halfExtents"]["z"]
             );
+
+        if (json.contains("material")) materialPath = json["material"].get<std::string>();
     }
 } // core

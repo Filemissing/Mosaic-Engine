@@ -6,6 +6,7 @@
 #define RAWENGINE_PRIMITIVE_H
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
+#include <string>
 
 #include "Component.h"
 
@@ -38,6 +39,7 @@ namespace core {
         PrimitiveType type = Sphere;
         glm::vec3 color = glm::vec3(1);
         glm::vec3 data = glm::vec3(1, 1, 1);
+        std::string materialPath; // Assets/Materials/*.json, empty = default material
 
         GPUPrimitive GetGPUPrimitive() const;
 

@@ -9,6 +9,7 @@
 
 #include "Assets/ComputeShader.h"
 #include "Assets/Material.h"
+#include "RaymarchMaterialLibrary.h"
 #include "Assets/model.h"
 #include "Components/Camera.h"
 #include "Components/Primitive.h"
@@ -114,6 +115,8 @@ namespace core {
 
         // final output
         Material* marchMaterial;
+        RaymarchMaterialLibrary* materialLibrary = nullptr; // materials of the primitives, textures, surface snippets
+        void UpdateMaterials();
         Material* debugSliceMaterial;
         Material* debugTextureMaterial;
         Model* quadModel;
