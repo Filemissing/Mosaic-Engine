@@ -20,7 +20,7 @@ namespace core {
 
     public:
         float nearPlane = 0.1f;
-        float farPlane = 100.0f;
+        float farPlane = 600.0f; // the raymarcher stops at the far plane too, the default world is 200 units across
 
         glm::mat4 GetView() const;
         glm::mat4 GetProjection() const;

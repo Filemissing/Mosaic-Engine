@@ -82,7 +82,9 @@ float sampleVolumeRaw(vec3 p, float fallback) {
 
 vec3 calcNormal(vec3 p) {
     float center = sampleVolumeRaw(p, 0.0); // p itself is always inside an allocated brick — this hit, so fallback here is moot
-    const float e = 0.5;
+    // one voxel: a fixed world-space offset blurs detail finer than itself (0.5 was ~2.5 voxels at 1024^3)
+    vec3 voxelSize = (_WorldMax - _WorldMin) / _Resolution;
+    float e = min(voxelSize.x, min(voxelSize.y, voxelSize.z));
     return normalize(vec3(
     sampleVolumeRaw(p + vec3(e,0,0), center) - sampleVolumeRaw(p - vec3(e,0,0), center),
     sampleVolumeRaw(p + vec3(0,e,0), center) - sampleVolumeRaw(p - vec3(0,e,0), center),

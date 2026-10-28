@@ -386,6 +386,13 @@ namespace core {
         classifyShader->SetFloat("_Lacunarity", lacunarity);
         classifyShader->SetFloat("_Persistence", persistence);
         classifyShader->SetFloat("_HeightScale", heightScale);
+        classifyShader->SetFloat("_TerrainScale", terrainScale);
+        classifyShader->SetFloat("_TerraceCount", terraceCount);
+        classifyShader->SetFloat("_CliffSharpness", cliffSharpness);
+        classifyShader->SetFloat("_DetailAmount", detailAmount);
+        classifyShader->SetFloat("_OverhangStrength", overhangStrength);
+        classifyShader->SetFloat("_OverhangScale", overhangScale);
+        classifyShader->SetFloat("_CliffRoughness", cliffRoughness);
         classifyShader->SetTexture2D("_Noise2D", noise2DTex);
         classifyShader->SetTexture3D("_Noise3D", noise3DTex);
         classifyShader->SetFloat("_Noise2DFrequency", noise2DFrequency);
@@ -697,6 +704,7 @@ namespace core {
             m_partialQueryInFlight = true;
         }
     }
+
 
 
     // ---------------------------------------------------------------------------------------------------------

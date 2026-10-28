@@ -81,11 +81,22 @@ namespace editor::editorWindows {
 
         ImGui::Spacing();
         ImGui::SeparatorText("Terrain");
-        ImGui::DragInt("Octaves", &raymarcher->octaves, 1.0f, 1, 12);
-        ImGui::DragFloat("Lacunarity", &raymarcher->lacunarity, 0.01f, 1.0f, 4.0f);
-        ImGui::DragFloat("Persistence", &raymarcher->persistence, 0.01f, 0.0f, 1.0f);
-        ImGui::DragFloat("Warp Strength", &raymarcher->warpStrength, 0.01f, 0.0f, 10.0f);
-        ImGui::DragFloat("Height Scale", &raymarcher->heightScale, 0.1f, 0.0f, 10.0f);
+        // a terrain change needs a full rebake: mark dirty when the widget is released, not on every drag step
+        auto rebakeOnRelease = [&] { if (ImGui::IsItemDeactivatedAfterEdit()) raymarcher->MarkDirty(); };
+        ImGui::DragInt("Octaves", &raymarcher->octaves, 1.0f, 1, 12); rebakeOnRelease();
+        ImGui::DragFloat("Lacunarity", &raymarcher->lacunarity, 0.01f, 1.0f, 4.0f); rebakeOnRelease();
+        ImGui::DragFloat("Persistence", &raymarcher->persistence, 0.01f, 0.0f, 1.0f); rebakeOnRelease();
+        ImGui::DragFloat("Warp Strength", &raymarcher->warpStrength, 0.01f, 0.0f, 4.0f); rebakeOnRelease();
+        ImGui::SetItemTooltip("Irregularity of the plateau outlines");
+        ImGui::DragFloat("Height Scale", &raymarcher->heightScale, 0.5f, 0.0f, 200.0f); rebakeOnRelease();
+        ImGui::DragFloat("Terrain Scale", &raymarcher->terrainScale, 0.005f, 0.01f, 4.0f); rebakeOnRelease();
+        ImGui::SetItemTooltip("Frequency of the mesas: lower = fewer, larger plateaus");
+        ImGui::DragFloat("Terraces", &raymarcher->terraceCount, 0.05f, 1.0f, 30.0f, "%.1f"); rebakeOnRelease();
+        ImGui::SliderFloat("Cliff Sharpness", &raymarcher->cliffSharpness, 0.0f, 1.0f); rebakeOnRelease();
+        ImGui::DragFloat("Surface Detail", &raymarcher->detailAmount, 0.001f, 0.0f, 0.5f); rebakeOnRelease();
+        ImGui::DragFloat("Overhang Strength", &raymarcher->overhangStrength, 0.01f, 0.0f, 5.0f); rebakeOnRelease();
+        ImGui::DragFloat("Overhang Scale", &raymarcher->overhangScale, 0.01f, 0.05f, 10.0f); rebakeOnRelease();
+        ImGui::DragFloat("Cliff Roughness", &raymarcher->cliffRoughness, 0.05f, 0.0f, 20.0f); rebakeOnRelease();
 
         ImGui::Spacing();
         ImGui::SeparatorText("Debug Visualization");

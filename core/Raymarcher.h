@@ -120,8 +120,8 @@ namespace core {
 
     public:
         // general settings
-        int maxSteps = 256;
-        float maxDist = 200.0f;
+        int maxSteps = 1024;   // empty bricks cost a step each: a diagonal ray at 1024^3 crosses ~380 of them
+        float maxDist = 600.0f;
         float surfDist = 0.001f;
         float colorBlend = 1.0f; // 0 = hard color cutoff between primitives, 1 = trilinear fade over one voxel
 
@@ -155,7 +155,14 @@ namespace core {
         float warpStrength = 1.0f;
         float lacunarity = 2.0f;
         float persistence = 0.3f;
-        float heightScale = 8.0f;
+        float heightScale = 60.0f;      // world units from the lowest to the highest plateau
+        float terrainScale = 0.12f;      // frequency of the large-scale elevation (where the mesas are)
+        float terraceCount = 5.0f;      // plateau levels over the full height
+        float cliffSharpness = 0.85f;   // 0 = smooth slopes between levels, 1 = sheer walls
+        float detailAmount = 0.02f;     // small surface variation, fraction of the height scale
+        float overhangStrength = 0.3f;  // how far cliff walls lean in and out
+        float overhangScale = 1.5f;
+        float cliffRoughness = 1.0f;    // world units of small-scale jitter on the cliff walls
 
         // debug settings
         bool debug3D = false;
