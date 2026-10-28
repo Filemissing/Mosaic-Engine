@@ -21,6 +21,7 @@ namespace core {
         // triplanar projection
         float textureScale = 0.25f;  // texture repeats per world unit (object space: per local unit)
         float blendSharpness = 4.0f; // higher = harder transition between the three projections
+        glm::vec2 textureOffset{0.0f}; // added to the projected texture coordinates (0.5 centres a texture on the origin)
         bool objectSpace = true;     // projected in the primitive's local space, so textures move with the object
 
         // textures (empty = none)

@@ -77,7 +77,7 @@ namespace core {
         noise2DShader = new ComputeShader("Assets/shaders/raymarching/noise2D.comp");
         noise3DShader = new ComputeShader("Assets/shaders/raymarching/noise3D.comp");
 
-        EnsureNoiseResourcesSized();
+        BakeNoise(); // the terrain needs its noise from the first bake on, not only after "Rebake Noise"
 
         classifyShader = new ComputeShader("Assets/shaders/raymarching/classify.comp");
         jfaStepShader = new ComputeShader("Assets/shaders/raymarching/jfaStep.comp");

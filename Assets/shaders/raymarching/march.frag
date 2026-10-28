@@ -153,7 +153,7 @@ struct Material {
     ivec4 layers;     // texture layers: x albedo, y normal, z roughness (-1 = none), w surface shader index
     ivec4 layered;    // sub-materials: x flat, y steep, z high (-1 = none), w flags (1 object space, 2 layered)
     vec4 layerRanges; // x slope start, y slope end, z height start, w height end
-    vec4 extra;       // x layer noise
+    vec4 extra;       // x layer noise, yz texture offset
 };
 layout(std430, binding = 6) readonly buffer MaterialBuffer {
     Material materials[];
@@ -216,27 +216,30 @@ vec3 triplanarWeights(vec3 n, float sharpness) {
 // One texture array layer projected along the three axes. textureGrad with an explicit footprint instead of
 // texture(): neighbouring pixels can hit different surfaces, and implicit derivatives would pick a tiny mip there
 // and draw seams. A projection seen at a grazing angle gets a proportionally larger footprint (blurs, no shimmer).
-vec4 sampleTriplanar(int layer, vec3 p, vec3 n, float scale, float sharpness, float footprint) {
+vec4 sampleTriplanar(int layer, vec3 p, vec3 n, float scale, float sharpness, float footprint, vec2 offset) {
     if (layer < 0) return vec4(1.0);
     vec3 w = triplanarWeights(n, sharpness);
     vec3 an = max(abs(n), vec3(0.2));
     vec4 result = vec4(0.0);
-    if (w.x > 0.01) { float g = footprint * scale / an.x; result += w.x * textureGrad(_MaterialTextures, vec3(p.zy * scale, layer), vec2(g, 0.0), vec2(0.0, g)); }
-    if (w.y > 0.01) { float g = footprint * scale / an.y; result += w.y * textureGrad(_MaterialTextures, vec3(p.xz * scale, layer), vec2(g, 0.0), vec2(0.0, g)); }
-    if (w.z > 0.01) { float g = footprint * scale / an.z; result += w.z * textureGrad(_MaterialTextures, vec3(p.xy * scale, layer), vec2(g, 0.0), vec2(0.0, g)); }
+    if (w.x > 0.01) { float g = footprint * scale / an.x; result += w.x * textureGrad(_MaterialTextures, vec3(p.zy * scale + offset, layer), vec2(g, 0.0), vec2(0.0, g)); }
+    if (w.y > 0.01) { float g = footprint * scale / an.y; result += w.y * textureGrad(_MaterialTextures, vec3(p.xz * scale + offset, layer), vec2(g, 0.0), vec2(0.0, g)); }
+    if (w.z > 0.01) { float g = footprint * scale / an.z; result += w.z * textureGrad(_MaterialTextures, vec3(p.xy * scale + offset, layer), vec2(g, 0.0), vec2(0.0, g)); }
     return result;
+}
+vec4 sampleTriplanar(int layer, vec3 p, vec3 n, float scale, float sharpness, float footprint) {
+    return sampleTriplanar(layer, p, n, scale, sharpness, footprint, vec2(0.0));
 }
 
 // Triplanar normal map, whiteout blend (Ben Golus, "Normal Mapping for a Triplanar Shader"): each projection's
 // tangent-space normal is swizzled into the space of n and added to it. Returns a normal in the same space as n.
-vec3 sampleTriplanarNormal(int layer, vec3 p, vec3 n, float scale, float sharpness, float footprint, float strength) {
+vec3 sampleTriplanarNormal(int layer, vec3 p, vec3 n, float scale, float sharpness, float footprint, float strength, vec2 offset) {
     if (layer < 0 || strength <= 0.0) return n;
     vec3 w = triplanarWeights(n, sharpness);
     vec3 an = max(abs(n), vec3(0.2));
     float gx = footprint * scale / an.x, gy = footprint * scale / an.y, gz = footprint * scale / an.z;
-    vec3 tx = textureGrad(_MaterialTextures, vec3(p.zy * scale, layer), vec2(gx, 0.0), vec2(0.0, gx)).xyz * 2.0 - 1.0;
-    vec3 ty = textureGrad(_MaterialTextures, vec3(p.xz * scale, layer), vec2(gy, 0.0), vec2(0.0, gy)).xyz * 2.0 - 1.0;
-    vec3 tz = textureGrad(_MaterialTextures, vec3(p.xy * scale, layer), vec2(gz, 0.0), vec2(0.0, gz)).xyz * 2.0 - 1.0;
+    vec3 tx = textureGrad(_MaterialTextures, vec3(p.zy * scale + offset, layer), vec2(gx, 0.0), vec2(0.0, gx)).xyz * 2.0 - 1.0;
+    vec3 ty = textureGrad(_MaterialTextures, vec3(p.xz * scale + offset, layer), vec2(gy, 0.0), vec2(0.0, gy)).xyz * 2.0 - 1.0;
+    vec3 tz = textureGrad(_MaterialTextures, vec3(p.xy * scale + offset, layer), vec2(gz, 0.0), vec2(0.0, gz)).xyz * 2.0 - 1.0;
     tx.xy *= strength; ty.xy *= strength; tz.xy *= strength;
     // whiteout: tangent xy + surface normal, z multiplied; flip for back-facing projections
     tx = vec3(tx.xy + n.zy, abs(tx.z) * n.x);
@@ -252,18 +255,19 @@ SurfaceData defaultSurface(int materialIndex, SurfaceInput i) {
     vec3 p = objectSpace ? i.objectPos : i.worldPos;
     vec3 n = objectSpace ? i.objectNormal : i.worldNormal;
     float scale = m.params.x, sharpness = m.params.y;
+    vec2 offset = m.extra.yz;
 
     SurfaceData s;
-    s.albedo = m.tint.rgb * sampleTriplanar(m.layers.x, p, n, scale, sharpness, i.footprint).rgb;
+    s.albedo = m.tint.rgb * sampleTriplanar(m.layers.x, p, n, scale, sharpness, i.footprint, offset).rgb;
     s.normal = i.worldNormal;
     if (m.layers.y >= 0) {
-        vec3 mapped = sampleTriplanarNormal(m.layers.y, p, n, scale, sharpness, i.footprint, m.tint.a);
+        vec3 mapped = sampleTriplanarNormal(m.layers.y, p, n, scale, sharpness, i.footprint, m.tint.a, offset);
         // back to world space: object normals were made with the world -> local rotation and divided scale
         s.normal = objectSpace ? normalize(transpose(eulerToMat3(primitives[i.primitive].rotation.xyz))
                                            * (mapped / primitives[i.primitive].scale.xyz))
                                : mapped;
     }
-    float roughness = m.layers.z >= 0 ? sampleTriplanar(m.layers.z, p, n, scale, sharpness, i.footprint).r : 0.0;
+    float roughness = m.layers.z >= 0 ? sampleTriplanar(m.layers.z, p, n, scale, sharpness, i.footprint, offset).r : 0.0;
     s.smoothness = mix(m.params.z, 2.0, roughness);
     s.metallic = m.params.w;
     s.emission = vec3(0.0);

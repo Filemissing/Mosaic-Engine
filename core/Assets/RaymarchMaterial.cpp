@@ -37,6 +37,7 @@ namespace core {
         Read(json, "metallic", metallic);
         Read(json, "textureScale", textureScale);
         Read(json, "blendSharpness", blendSharpness);
+        if (json.contains("textureOffset")) textureOffset = glm::vec2(json["textureOffset"][0], json["textureOffset"][1]);
         Read(json, "objectSpace", objectSpace);
         Read(json, "albedoTexture", albedoTexture);
         Read(json, "normalTexture", normalTexture);
@@ -62,6 +63,7 @@ namespace core {
         json["metallic"] = metallic;
         json["textureScale"] = textureScale;
         json["blendSharpness"] = blendSharpness;
+        json["textureOffset"] = {textureOffset.x, textureOffset.y};
         json["objectSpace"] = objectSpace;
         json["albedoTexture"] = albedoTexture;
         json["normalTexture"] = normalTexture;

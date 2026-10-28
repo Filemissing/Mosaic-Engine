@@ -190,7 +190,7 @@ namespace core {
                 g.layered = glm::ivec4(-1, -1, -1, flags);
             }
             g.layerRanges = glm::vec4(m.slopeStart, m.slopeEnd, m.heightStart, m.heightEnd);
-            g.extra = glm::vec4(m.layerNoise, 0.0f, 0.0f, 0.0f);
+            g.extra = glm::vec4(m.layerNoise, m.textureOffset.x, m.textureOffset.y, 0.0f);
         }
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, materialBuffer);
         glBufferData(GL_SHADER_STORAGE_BUFFER, gpu.size() * sizeof(GPUMaterial), gpu.data(), GL_DYNAMIC_DRAW);
@@ -220,6 +220,11 @@ namespace core {
                 if (w == TEXTURE_SIZE && h == TEXTURE_SIZE) std::copy(data, data + resized.size(), resized.begin());
                 else stbir_resize_uint8_linear(data, w, h, 0, resized.data(), TEXTURE_SIZE, TEXTURE_SIZE, 0, STBIR_RGBA);
                 stbi_image_free(data);
+                // images are stored top row first; flip so v points up (the image is upright on walls)
+                const size_t row = static_cast<size_t>(TEXTURE_SIZE) * 4;
+                for (int y = 0; y < TEXTURE_SIZE / 2; y++)
+                    std::swap_ranges(resized.begin() + y * row, resized.begin() + (y + 1) * row,
+                                     resized.begin() + (TEXTURE_SIZE - 1 - y) * row);
             } else {
                 if (layer < static_cast<int>(files.size())) std::cerr << "Raymarch texture failed to load: " << files[layer] << std::endl;
                 std::fill(resized.begin(), resized.end(), 255); // white
@@ -361,6 +366,7 @@ namespace core {
             changed |= ImGui::DragFloat("Texture scale", &m.textureScale, 0.005f, 0.001f, 10.0f);
             ImGui::SetItemTooltip("Texture repeats per unit");
             changed |= ImGui::DragFloat("Blend sharpness", &m.blendSharpness, 0.1f, 1.0f, 64.0f);
+            changed |= ImGui::DragFloat2("Texture offset", &m.textureOffset.x, 0.01f);
             changed |= ImGui::Checkbox("Object space", &m.objectSpace);
             ImGui::SetItemTooltip("Project in the primitive's local space, so the texture moves with it");
         }

@@ -52,6 +52,7 @@ namespace editor {
 
         json color = sceneJson["ambientColor"];
         scene->ambientColor = glm::vec4(color["r"], color["g"], color["b"], color["a"]);
+        if (sceneJson.contains("ambientIntensity")) scene->ambientIntensity = sceneJson["ambientIntensity"];
 
         for (const auto& object : sceneJson["objects"]) {
             auto* gameObject = new GameObject(scene);

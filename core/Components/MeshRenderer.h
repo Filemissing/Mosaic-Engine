@@ -14,6 +14,8 @@ namespace core {
     class MeshRenderer : public Component {
         Model* model;
         Material* material;
+        Texture* texture = nullptr; // optional _MainTex, from the scene's "material.texture"
+        std::string texturePath;
     public:
         MeshRenderer() : model(nullptr), material(nullptr) {}
         explicit MeshRenderer(GameObject* gameObject) : MeshRenderer() {gameObject->AddComponent(this);};

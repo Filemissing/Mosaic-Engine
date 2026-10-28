@@ -26,7 +26,7 @@ namespace core {
         glm::ivec4 layers;     // texture array layers: x albedo, y normal, z roughness (-1 = none), w surface shader index
         glm::ivec4 layered;    // sub-material indices: x flat, y steep, z high (-1 = none), w flags (1 object space, 2 layered)
         glm::vec4 layerRanges; // x slope start, y slope end, z height start, w height end
-        glm::vec4 extra;       // x layer noise
+        glm::vec4 extra;       // x layer noise, yz texture offset
     };
 
     class RaymarchMaterialLibrary {
