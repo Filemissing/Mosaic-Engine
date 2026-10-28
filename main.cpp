@@ -53,7 +53,7 @@ int main() {
     RenderSettings::Init();
 
     //Scene
-    auto* scene1 = SceneManager::LoadScene("Terrain_test");
+    auto* scene1 = SceneManager::LoadScene("Showcase");
     Editor::activeScene = scene1;
 
     // Texture CMGaToTexture("Assets/textures/CMGaTo_crop.png");
