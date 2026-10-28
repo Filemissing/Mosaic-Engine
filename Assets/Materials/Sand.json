@@ -1,0 +1,12 @@
+{
+    "tint": [1.0, 1.0, 1.0],
+    "smoothness": 4.0,
+    "metallic": 0.0,
+    "albedoTexture": "Assets/textures/Ground080_Color.jpg",
+    "normalTexture": "Assets/textures/Ground080_NormalGL.jpg",
+    "roughnessTexture": "Assets/textures/Ground080_Roughness.jpg",
+    "normalStrength": 1.0,
+    "textureScale": 0.12,
+    "blendSharpness": 6.0,
+    "objectSpace": true
+}

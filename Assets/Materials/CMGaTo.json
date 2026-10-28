@@ -1,0 +1,17 @@
+{
+    "tint": [
+        1.0,
+        1.0,
+        1.0
+    ],
+    "smoothness": 16.0,
+    "metallic": 0.0,
+    "albedoTexture": "Assets/textures/CMGaTo_crop.png",
+    "textureScale": 0.125,
+    "blendSharpness": 16.0,
+    "objectSpace": true,
+    "textureOffset": [
+        0.5,
+        0.5
+    ]
+}

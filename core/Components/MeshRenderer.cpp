@@ -14,6 +14,7 @@ namespace core {
     MeshRenderer::~MeshRenderer() {
         delete model;
         delete material;
+        delete texture;
     }
 
     void MeshRenderer::Render() {
@@ -47,6 +48,7 @@ namespace core {
         ImGui::Indent(20);
         ImGui::Text((std::string("Vertex Shader: ") + material->vertexShaderPath).c_str());
         ImGui::Text((std::string("Fragment Shader: ") + material->fragmentShaderPath).c_str());
+        ImGui::Text((std::string("Texture: ") + (texturePath.empty() ? "(none)" : texturePath)).c_str());
 
         ImGui::Spacing();
 
@@ -65,6 +67,7 @@ namespace core {
 
         json["material"]["smoothness"] = material->smoothness;
         json["material"]["metallic"] = material->metallic;
+        if (!texturePath.empty()) json["material"]["texture"] = texturePath;
 
         return json;
     }
@@ -79,5 +82,12 @@ namespace core {
 
         material->smoothness = json["material"]["smoothness"];
         material->metallic = json["material"]["metallic"];
+
+        // optional: without it Material::Bind falls back to white.png
+        if (json["material"].contains("texture")) {
+            texturePath = json["material"]["texture"].get<std::string>();
+            texture = new Texture(texturePath);
+            material->SetTexture2D("_MainTex", texture->getId());
+        }
     }
 }

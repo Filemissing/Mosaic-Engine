@@ -9,8 +9,10 @@ namespace editor::editorWindows {
     void RaymarcherWindow::OnEnable() {
         raymarcher = Editor::viewPort->GetRenderer()->GetRaymarcher();
         if (!raymarcher) return;
-        pendingRes = raymarcher->GetResolution();
-        pendingBrickPoolDim = raymarcher->GetBrickPoolDim();
+        pendingRes = raymarcher->GetResolution().x;
+        pendingWorldMin = raymarcher->GetWorldMin().x;
+        pendingWorldMax = raymarcher->GetWorldMax().x;
+        pendingBrickPoolDim = raymarcher->GetBrickPoolDim().x;
     }
 
     void RaymarcherWindow::OnGUI() {
@@ -35,21 +37,22 @@ namespace editor::editorWindows {
                 backend->PrepareBake();
                 backend->Bake(Editor::activeScene->primitives);
             }
-            ImGui::TextDisabled("The settings below are only available for v6-dynamic-sparse (the current Raymarcher).");
+            ImGui::TextDisabled("The settings below are only available for v7-materials (the current Raymarcher).");
             ImGui::TextDisabled("Older versions use their own defaults; the Version Benchmark window sets them for runs.");
             return;
         }
 
         ImGui::SeparatorText("Volume");
-        ImGui::DragInt3("Resolution", &pendingRes.x, 1.0f, 1);
-        ImGui::DragFloat3("World Min", &pendingWorldMin.x, 0.1f);
-        ImGui::DragFloat3("World Max", &pendingWorldMax.x, 0.1f);
-        ImGui::DragInt3("Brick pool dimensions", &pendingBrickPoolDim.x, 0.1f);
+        ImGui::DragInt("Resolution", &pendingRes, 1.0f, 1, 4096);
+        ImGui::DragFloat("World Min", &pendingWorldMin, 0.1f);
+        ImGui::DragFloat("World Max", &pendingWorldMax, 0.1f);
+        ImGui::DragInt("Brick pool dimensions", &pendingBrickPoolDim, 0.1f, 1, 256);
+        ImGui::SetItemTooltip("Pool size in bricks per axis; holds %d bricks", pendingBrickPoolDim * pendingBrickPoolDim * pendingBrickPoolDim);
 
         if (ImGui::Button("Apply Volume Settings")) {
-            raymarcher->SetBrickPoolDim(pendingBrickPoolDim);
-            raymarcher->SetWorldBounds(pendingWorldMin, pendingWorldMax);
-            raymarcher->EnsureVolumeSized(pendingRes);
+            raymarcher->SetBrickPoolDim(glm::ivec3(pendingBrickPoolDim));
+            raymarcher->SetWorldBounds(glm::vec3(pendingWorldMin), glm::vec3(pendingWorldMax));
+            raymarcher->EnsureVolumeSized(glm::ivec3(pendingRes));
             raymarcher->MarkDirty();
         }
 
@@ -101,11 +104,22 @@ namespace editor::editorWindows {
 
         ImGui::Spacing();
         ImGui::SeparatorText("Terrain");
-        ImGui::DragInt("Octaves", &raymarcher->octaves, 1.0f, 1, 12);
-        ImGui::DragFloat("Lacunarity", &raymarcher->lacunarity, 0.01f, 1.0f, 4.0f);
-        ImGui::DragFloat("Persistence", &raymarcher->persistence, 0.01f, 0.0f, 1.0f);
-        ImGui::DragFloat("Warp Strength", &raymarcher->warpStrength, 0.01f, 0.0f, 10.0f);
-        ImGui::DragFloat("Height Scale", &raymarcher->heightScale, 0.1f, 0.0f, 10.0f);
+        // a terrain change needs a full rebake: mark dirty when the widget is released, not on every drag step
+        auto rebakeOnRelease = [&] { if (ImGui::IsItemDeactivatedAfterEdit()) raymarcher->MarkDirty(); };
+        ImGui::DragInt("Octaves", &raymarcher->octaves, 1.0f, 1, 12); rebakeOnRelease();
+        ImGui::DragFloat("Lacunarity", &raymarcher->lacunarity, 0.01f, 1.0f, 4.0f); rebakeOnRelease();
+        ImGui::DragFloat("Persistence", &raymarcher->persistence, 0.01f, 0.0f, 1.0f); rebakeOnRelease();
+        ImGui::DragFloat("Warp Strength", &raymarcher->warpStrength, 0.01f, 0.0f, 4.0f); rebakeOnRelease();
+        ImGui::SetItemTooltip("Irregularity of the plateau outlines");
+        ImGui::DragFloat("Height Scale", &raymarcher->heightScale, 0.5f, 0.0f, 200.0f); rebakeOnRelease();
+        ImGui::DragFloat("Terrain Scale", &raymarcher->terrainScale, 0.005f, 0.01f, 4.0f); rebakeOnRelease();
+        ImGui::SetItemTooltip("Frequency of the mesas: lower = fewer, larger plateaus");
+        ImGui::DragFloat("Terraces", &raymarcher->terraceCount, 0.05f, 1.0f, 30.0f, "%.1f"); rebakeOnRelease();
+        ImGui::SliderFloat("Cliff Sharpness", &raymarcher->cliffSharpness, 0.0f, 1.0f); rebakeOnRelease();
+        ImGui::DragFloat("Surface Detail", &raymarcher->detailAmount, 0.001f, 0.0f, 0.5f); rebakeOnRelease();
+        ImGui::DragFloat("Overhang Strength", &raymarcher->overhangStrength, 0.01f, 0.0f, 5.0f); rebakeOnRelease();
+        ImGui::DragFloat("Overhang Scale", &raymarcher->overhangScale, 0.01f, 0.05f, 10.0f); rebakeOnRelease();
+        ImGui::DragFloat("Cliff Roughness", &raymarcher->cliffRoughness, 0.05f, 0.0f, 20.0f); rebakeOnRelease();
 
         ImGui::Spacing();
         ImGui::SeparatorText("Debug Visualization");

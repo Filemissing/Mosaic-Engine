@@ -16,8 +16,8 @@
                     "width": 800
                 },
                 {
-                    "moveSpeed": 500.0,
-                    "rotateSpeed": 10000.0,
+                    "moveSpeed": 5000.0,
+                    "rotateSpeed": 20000.0,
                     "type": "PlayerController"
                 }
             ],

@@ -1,0 +1,9 @@
+{
+    "tint": [1.0, 1.0, 1.0],
+    "smoothness": 96.0,
+    "metallic": 0.8,
+    "albedoTexture": "Assets/textures/Metal.png",
+    "textureScale": 0.5,
+    "blendSharpness": 4.0,
+    "objectSpace": true
+}

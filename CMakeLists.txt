@@ -79,6 +79,10 @@ set(IMGUI_SOURCES
         editor/EditorWindows/BenchmarkTool.h
         core/Raymarcher.cpp
         core/Raymarcher.h
+        core/RaymarchMaterialLibrary.cpp
+        core/RaymarchMaterialLibrary.h
+        core/Assets/RaymarchMaterial.cpp
+        core/Assets/RaymarchMaterial.h
         editor/EditorWindows/RaymarcherWindow.cpp
         editor/EditorWindows/RaymarcherWindow.h
         core/Assets/ComputeShader.cpp
@@ -143,6 +147,12 @@ add_custom_command(
         COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${CMAKE_SOURCE_DIR}/Assets/textures/
         ${CMAKE_CURRENT_BINARY_DIR}/Assets/textures/)
+
+add_custom_command(
+        TARGET RawEngine PRE_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_SOURCE_DIR}/Assets/Materials/
+        ${CMAKE_CURRENT_BINARY_DIR}/Assets/Materials/)
 
 add_custom_target(copy_shaders ALL
         COMMAND ${CMAKE_COMMAND} -E copy_directory

@@ -115,7 +115,10 @@ namespace editor::editorWindows {
         {
             const auto& e = s_entries[s_selectedEntry];
             if (!e.samples.empty()) {
-                std::vector<float> fsamples(e.samples.begin(), e.samples.end());
+                std::vector<float> fsamples;
+                fsamples.reserve(e.samples.size());
+                std::transform(e.samples.begin(), e.samples.end(), std::back_inserter(fsamples),
+                    [](double d) { return static_cast<float>(d); });
                 ImGui::Text("Sample history: %s", e.name.c_str());
                 ImGui::PlotLines("##sparkline",
                                  fsamples.data(),

@@ -12,8 +12,8 @@ namespace core {
     private:
         bool isMoving = false;
     public:
-        float moveSpeed = 5.0f;
-        float rotateSpeed = 10000.0f;
+        float moveSpeed = 5000.0f;
+        float rotateSpeed = 20000.0f;
 
         // set by benchmarks so the camera stays on its pose
         static bool inputLocked;

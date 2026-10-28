@@ -62,7 +62,7 @@ int main(int argc, char** argv) {
     RenderSettings::Init();
 
     //Scene
-    auto* scene1 = SceneManager::LoadScene("Terrain_test");
+    auto* scene1 = SceneManager::LoadScene("Showcase");
     Editor::activeScene = scene1;
 
     // RawEngine --version-benchmark <scene> [--quick]: compare every raymarcher version, then exit

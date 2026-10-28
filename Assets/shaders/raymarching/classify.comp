@@ -217,52 +217,78 @@ float PlaneSDF(vec3 p, vec3 normal, float offset) {
     return dot(p, normalize(normal)) - offset;
 }
 
-// Terrain generation
-vec3 warp(vec3 p, float warp_amplitude) {
-    float ox = sampleNoise3D(p);
-    float oy = sampleNoise3D(p + vec3(31.41, 15.92, 65.35));
-    float oz = sampleNoise3D(p + vec3(89.79, 32.38, 46.26));
+// Terrain generation: terraced mesas with overhanging, craggy cliffs
+uniform float _TerrainScale;     // frequency of the large-scale elevation (where the mesas are)
+uniform float _TerraceCount;     // number of plateau levels over the full height
+uniform float _CliffSharpness;   // 0 = smooth slopes between levels, 1 = sheer walls
+uniform float _DetailAmount;     // small surface variation, fraction of the height scale
+uniform float _OverhangStrength; // height-dependent horizontal shift of the cliffs (pattern space units)
+uniform float _OverhangScale;
+uniform float _CliffRoughness;   // world units of small-scale sideways jitter on the cliff walls
 
-    vec3 offset = vec3(ox, oy, oz) * 2.0 - 1.0;
-
-    // scale down vertical impact
-    offset.y *= 0.3;
-
-    return p + offset * warp_amplitude;
-}
-
-float fbm(vec2 p, int octaves, float lucanarity, float persistence) {
+// fbm normalized to [0, 1]
+float fbm(vec2 p, int octaves, float lacunarity, float persistence) {
     float value = 0.0;
     float amplitude = 0.5;
     float frequency = 1.0;
+    float total = 0.0;
     for (int i = 0; i < octaves; i++) {
         value += amplitude * sampleNoise2D(p * frequency);
-        frequency *= lucanarity;
+        total += amplitude;
+        frequency *= lacunarity;
         amplitude *= persistence;
     }
-    return value;
+    return value / max(total, 1e-6);
 }
 
-float pattern(vec3 point, int octaves, float lucanarity, float persistence, float warpStrength) {
-    // Warp the point in space
-    vec3 p = warp(point, warpStrength);
+// height of the terrain surface in world units, xz in pattern space
+float terrainHeight(vec2 xz, int octaves, float heightScale, float lacunarity, float persistence) {
+    // large-scale elevation, with a mild warp so plateau outlines are irregular instead of round blobs
+    vec2 w = xz * _TerrainScale;
+    vec2 offset = vec2(fbm(w * 0.7 + vec2(3.1, 7.7), 3, 2.0, 0.5),
+                       fbm(w * 0.7 + vec2(11.3, 1.9), 3, 2.0, 0.5)) * 2.0 - 1.0;
+    float e = fbm(w + offset * _WarpStrength, octaves, lacunarity, persistence);
+    e = clamp((e - 0.5) * 2.5 + 0.5, 0.0, 1.0); // fbm of Perlin noise clusters around 0.5, stretch it over [0, 1]
 
-    vec2 q = vec2(fbm(p.xz + vec2(0.0,0.0), octaves, lucanarity, persistence),
-    fbm(p.xz + vec2(5.2,1.3), octaves, lucanarity, persistence));
+    // terraces: flat levels, joined by a riser in the middle of each step that gets steeper with _CliffSharpness
+    float levels = max(_TerraceCount, 1.0);
+    float x = e * levels;
+    float level = floor(x);
+    float k = mix(0.5, 0.02, _CliffSharpness);
+    float riser = smoothstep(0.5 - k, 0.5 + k, x - level);
+    float terraced = (level + riser) / levels;
 
-    vec2 r = vec2(fbm(p.xz + 4.0 * q + vec2(1.7,9.2), octaves, lucanarity, persistence),
-    fbm(p.xz + 4.0 * q + vec2(8.3,2.8), octaves, lucanarity, persistence));
-
-    // Calculate base height
-    float baseHeight = fbm(p.xz + 4.0 * r, octaves, lucanarity, persistence);
-
-    return baseHeight + (point.y - p.y);
+    float detail = fbm(xz * 1.5 + vec2(23.1, 7.9), 4, lacunarity, persistence) - 0.5;
+    return (terraced + detail * _DetailAmount) * heightScale;
 }
 
+// Not an exact distance (vertical distance, plus noise): seedFix.comp and the coarse gradient test account for that.
 float TerrainSDF(vec3 p, int octaves, float heightScale, float lacunarity, float persistence) {
-    float h = pattern(p * 0.1, octaves, lacunarity, persistence, _WarpStrength) * heightScale;
+    vec3 q = p * 0.1;
 
-    return p.y - h;
+    // Overhangs and craggy walls: shift the heightfield sideways by 3D noise, so the shift changes with height and
+    // walls lean in and out. On flat plateau tops a sideways shift changes nothing, so only the cliffs are affected.
+    // Large-scale shift = overhangs, small-scale shift = rough walls.
+    vec2 overhangShift = (vec2(sampleNoise3D(q * _OverhangScale),
+                               sampleNoise3D(q * _OverhangScale + vec3(31.41, 15.92, 65.35))) * 2.0 - 1.0) * _OverhangStrength;
+    // three octaves of wall jitter: the base crags plus two finer layers at half the amplitude each
+    vec2 roughShift = vec2(0.0);
+    float roughAmplitude = 1.0;
+    float roughFrequency = 4.0;
+    for (int i = 0; i < 3; i++) {
+        vec3 o = vec3(7.3, 2.1, 5.9) + float(i) * vec3(13.1, 29.7, 3.3); // decorrelate the octaves
+        roughShift += (vec2(sampleNoise3D(q * roughFrequency + o),
+                            sampleNoise3D(q * roughFrequency + o + vec3(19.7, 11.3, 3.1))) * 2.0 - 1.0) * roughAmplitude;
+        roughAmplitude *= 0.5;
+        roughFrequency *= 2.1;
+    }
+    roughShift *= _CliffRoughness * 0.1; // world -> pattern units
+    vec2 xz = q.xz + overhangShift + roughShift;
+    float h = terrainHeight(xz, octaves, heightScale, lacunarity, persistence);
+
+    float d = p.y - h;
+
+    return d;
 }
 
 // ----------------------------------------------------------------
@@ -439,8 +465,14 @@ void main() {
         vec3 grad = vec3(dx, dy, dz);
 
         if (length(grad) > 1e-6) {
-            vec3 gradN = normalize(grad);
-            vec3 surfaceWorldPos = worldPos - h.dist * gradN; // walk back along the gradient to the zero-crossing
+            // Newton step to the zero-crossing: exact for planar surfaces, also when the SDF isn't an exact distance
+            // (terrain's vertical distance is too large by |grad| on steep cliffs, so d * normalize(grad) overshoots)
+            grad /= 2.0 * eps;
+            vec3 step = h.dist * grad / dot(grad, grad);
+            // a seed voxel is within one voxel diagonal of the surface, a longer step means a bad gradient
+            float stepLength = length(step);
+            if (stepLength > voxelSize) step *= voxelSize / stepLength;
+            vec3 surfaceWorldPos = worldPos - step;
 
             vec3 surfaceUvw = (surfaceWorldPos - _WorldMin) / (_WorldMax - _WorldMin);
             refinedTexel = surfaceUvw * vec3(_Resolution) - 0.5;
