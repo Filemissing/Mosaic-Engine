@@ -31,6 +31,7 @@ namespace editor::editorWindows {
     std::vector<bool> VersionBenchmark::s_versionEnabled;
     glm::ivec2        VersionBenchmark::s_renderSize       = glm::ivec2(1280, 720);
     glm::ivec3        VersionBenchmark::s_volumeResolution = glm::ivec3(512);
+    glm::ivec3        VersionBenchmark::s_brickPoolDim     = glm::ivec3(32); // v3-v6's default; v7 defaults to 64
     glm::vec3         VersionBenchmark::s_worldMin         = glm::vec3(-30.0f);
     glm::vec3         VersionBenchmark::s_worldMax         = glm::vec3(30.0f);
     int               VersionBenchmark::s_maxSteps         = 256;
@@ -114,6 +115,8 @@ namespace editor::editorWindows {
         ImGui::SeparatorText("Settings (identical for every version)");
         ImGui::InputInt2("Render size", &s_renderSize.x);
         ImGui::InputInt3("Volume resolution", &s_volumeResolution.x);
+        ImGui::InputInt3("Brick pool size (bricks)", &s_brickPoolDim.x);
+        ImGui::SetItemTooltip("Applied to every version with a sparse brick pool (v3 and later)");
         ImGui::InputFloat3("World min", &s_worldMin.x);
         ImGui::InputFloat3("World max", &s_worldMax.x);
         ImGui::InputInt("Max steps", &s_maxSteps);
@@ -343,6 +346,7 @@ namespace editor::editorWindows {
 
                 renderer->SetRaymarchVersion(id);
                 core::RaymarchBackend* backend = renderer->GetBackend();
+                backend->SetBrickPoolDim(s_brickPoolDim);
                 backend->SetVolume(s_volumeResolution, s_worldMin, s_worldMax);
                 backend->SetMarchParams(s_maxSteps, s_maxDist, s_surfDist);
 
@@ -366,6 +370,7 @@ namespace editor::editorWindows {
                 // Every timed bake starts from freshly allocated volume resources, like the first one.
                 // v3 deletes some bake textures after a bake without clearing their handles, so a second bake
                 // on the same resources binds deleted textures; re-allocating (untimed) keeps every bake valid.
+                backend->SetBrickPoolDim(s_brickPoolDim);
                 backend->SetVolume(s_volumeResolution, s_worldMin, s_worldMax);
                 glFinish();
 
@@ -482,6 +487,7 @@ namespace editor::editorWindows {
         meta["scene"] = s_sceneName;
         meta["renderSize"] = {s_renderSize.x, s_renderSize.y};
         meta["volumeResolution"] = {s_volumeResolution.x, s_volumeResolution.y, s_volumeResolution.z};
+        meta["brickPoolDim"] = {s_brickPoolDim.x, s_brickPoolDim.y, s_brickPoolDim.z};
         meta["worldMin"] = {s_worldMin.x, s_worldMin.y, s_worldMin.z};
         meta["worldMax"] = {s_worldMax.x, s_worldMax.y, s_worldMax.z};
         meta["maxSteps"] = s_maxSteps;

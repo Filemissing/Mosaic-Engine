@@ -23,7 +23,7 @@ otherwise deliberately kept.
 
 ## What is identical for every version
 - Scene (reloaded fresh for each version), camera poses, render size, volume resolution and bounds,
-  max steps / max distance / surface distance, warmup and measured frame counts, bake repeats.
+  max steps / max distance / surface distance, warmup and measured frame counts, bake repeats, and the brick pool size of every version that has one (v3 and later; 32^3 bricks by default, v7's own default is 64^3).
 - Measurement: GPU timestamps around the raymarch pass only, and around `Bake`. VRAM is the
   `GL_NVX_gpu_memory_info` used-memory delta against a reading taken with no raymarcher loaded.
   Only one version exists at a time, so their memory never overlaps.

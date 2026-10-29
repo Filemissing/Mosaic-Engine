@@ -29,6 +29,9 @@ namespace core {
         virtual bool SupportsTerrain() const { return false; }
 
         virtual void SetVolume(glm::ivec3 resolution, glm::vec3 worldMin, glm::vec3 worldMax) {}
+        // brick pool size in bricks per axis, for versions with a sparse brick pool (v3 and later); takes effect on
+        // the next SetVolume. Returns false for versions without a pool.
+        virtual bool SetBrickPoolDim(glm::ivec3 dim) { return false; }
         virtual void SetMarchParams(int maxSteps, float maxDist, float surfDist) = 0;
 
         // anything the version needs before Bake that is not part of the bake itself (e.g. noise textures)

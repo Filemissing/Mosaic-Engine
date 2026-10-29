@@ -123,6 +123,13 @@ namespace core {
             explicit VolumeAdapter(Args... args) : raymarcher(new T(args...)) {}
             ~VolumeAdapter() override { delete raymarcher; }
 
+            bool SetBrickPoolDim(glm::ivec3 dim) override {
+                if constexpr (requires(T* r) { r->SetBrickPoolDim(glm::ivec3(0)); }) {
+                    raymarcher->SetBrickPoolDim(dim);
+                    return true;
+                }
+                return false;
+            }
             void SetVolume(glm::ivec3 resolution, glm::vec3 worldMin, glm::vec3 worldMax) override {
                 raymarcher->SetWorldBounds(worldMin, worldMax);
                 raymarcher->EnsureVolumeSized(resolution);

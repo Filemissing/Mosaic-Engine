@@ -48,6 +48,7 @@ namespace editor::editorWindows {
         static std::vector<bool> s_versionEnabled;
         static glm::ivec2  s_renderSize;
         static glm::ivec3  s_volumeResolution;
+        static glm::ivec3  s_brickPoolDim; // applied to every version with a brick pool, so their memory compares fairly
         static glm::vec3   s_worldMin, s_worldMax;
         static int         s_maxSteps;
         static float       s_maxDist, s_surfDist;
