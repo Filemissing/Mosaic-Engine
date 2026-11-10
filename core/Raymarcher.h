@@ -13,6 +13,7 @@
 #include "Assets/model.h"
 #include "Components/Camera.h"
 #include "Components/Primitive.h"
+#include "GL/StorageBuffer.h"
 #include "GL/Texture2D.h"
 #include "GL/Texture3D.h"
 
@@ -44,8 +45,8 @@ namespace core {
             glm::vec3 aabbMin{}, aabbMax{};
             bool unbounded = false;    // plane/terrain: changes need a full rebake
         };
-        GLuint primitivesBuffer = 0;     // SSBO binding 0, one GPUPrimitive per slot (free slots have type -1)
-        GLuint primitiveIndexBuffer = 0; // SSBO binding 2, slots classify has to evaluate for the current dispatch
+        gl::StorageBuffer primitivesBuffer{gl::ssbo::Primitives}; // SSBO binding 0, one GPUPrimitive per slot (free slots have type -1)
+        gl::StorageBuffer primitiveIndexBuffer{gl::ssbo::PrimitiveIndices}; // SSBO binding 2, slots classify has to evaluate for the current dispatch
         std::unordered_map<Primitive*, uint32_t> slotOf;
         std::vector<PrimitiveSlot> slots;
         std::vector<uint32_t> freePrimitiveSlots;
@@ -64,7 +65,7 @@ namespace core {
         glm::ivec3 brickGridResolution = glm::ivec3(0); // number of bricks per axis
         glm::ivec3 brickPoolDim = glm::ivec3(64); // the dimensions of the brick pool
 
-        GLuint freeListBuffer = 0; // SSBO binding 1: int freeCount, int droppedBricks, uint freeSlots[capacity]
+        gl::StorageBuffer freeListBuffer{gl::ssbo::FreeList}; // SSBO binding 1: int freeCount, int droppedBricks, uint freeSlots[capacity]
 
         gl::Texture3D brickPoolTex;   // R16F, holds baked distances, laid out as brickPoolDim * BRICK_STORE texels
         gl::Texture3D brickIdTex;     // R16UI, same layout as brickPoolTex, primitive slot of the nearest primitive (for color)
@@ -85,16 +86,16 @@ namespace core {
         ComputeShader* settleShader = nullptr;
         ComputeShader* seedFixShader = nullptr;
 
-        int chunkBricks = 1;                  // C: bricks per chunk axis
+        int chunkBricks = 1;                     // bricks per chunk axis
         glm::ivec3 chunkGridDim{1};
-        glm::ivec3 scratchDim{0};       // allocated scratch size in voxels
-        gl::Texture3D seedTexA, seedTexB;    // RGBA16F seed ping-pong, chunk-local coordinates
+        glm::ivec3 scratchDim{0};          // allocated scratch size in voxels
+        gl::Texture3D seedTexA, seedTexB;        // RGBA16F seed ping-pong, chunk-local coordinates
         gl::Texture3D* finalSeedTex = nullptr;
         gl::Texture3D signTex;                   // R8
         gl::Texture3D idTex;                     // R16UI
         gl::Texture3D distTex;                   // R16F, raw SDF value, used by seedFix to place seeds on missed sign changes
         gl::Texture3D brickFlagsTex;             // R8, (C + 4)^3 bricks: seed per brick for the core and a 2 brick halo
-        GLuint chunkFlagsBuffer;          // SSBO binding 3, one uint per chunk, written by the coarse pass
+        gl::StorageBuffer chunkFlagsBuffer{gl::ssbo::ChunkFlags}; // SSBO binding 3, one uint per chunk, written by the coarse pass
 
         // dirty bookkeeping on the CPU, one box (in bricks) per chunk
         struct BrickBox {
@@ -123,10 +124,10 @@ namespace core {
 
     public:
         // general settings
-        int maxSteps = 1024;   // empty bricks cost a step each: a diagonal ray at 1024^3 crosses ~380 of them
+        int maxSteps = 1024;             // empty bricks cost a step each: a diagonal ray at 1024^3 crosses ~380 of them
         float maxDist = 600.0f;
         float surfDist = 0.001f;
-        float colorBlend = 1.0f; // 0 = hard color cutoff between primitives, 1 = trilinear fade over one voxel
+        float colorBlend = 1.0f;         // 0 = hard color cutoff between primitives, 1 = trilinear fade over one voxel
 
         // bake settings
         int bakeBudgetMiB = 128;         // scratch VRAM a single chunk may use while baking

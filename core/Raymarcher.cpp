@@ -40,10 +40,6 @@ namespace core {
         glGenQueries(2, m_timeQuery);
         glGenQueries(2, m_partialQuery);
 
-        glGenBuffers(1, &primitivesBuffer);
-        glGenBuffers(1, &primitiveIndexBuffer);
-        glGenBuffers(1, &freeListBuffer);
-        glGenBuffers(1, &chunkFlagsBuffer);
         gpuSlots.resize(1);
         gpuSlots[0].position.w = -1; // never bind an empty SSBO
 
@@ -82,10 +78,6 @@ namespace core {
     Raymarcher::~Raymarcher() {
         glDeleteQueries(2, m_timeQuery);
         glDeleteQueries(2, m_partialQuery);
-        glDeleteBuffers(1, &primitivesBuffer);
-        glDeleteBuffers(1, &primitiveIndexBuffer);
-        glDeleteBuffers(1, &freeListBuffer);
-        glDeleteBuffers(1, &chunkFlagsBuffer);
 
         delete marchMaterial;
         delete materialLibrary;
@@ -147,8 +139,7 @@ namespace core {
         data[1] = 0;                             // droppedBricks
         for (int i = 0; i < capacity; i++) data[2 + i] = static_cast<GLuint>(capacity - 1 - i); // pops hand out slot 0 first
 
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, freeListBuffer);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, data.size() * sizeof(GLuint), data.data(), GL_DYNAMIC_DRAW);
+        freeListBuffer.Upload(data);
         poolSlotsUsed = 0;
         droppedBricks = 0;
     }
@@ -188,8 +179,7 @@ namespace core {
             }
         }
 
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, chunkFlagsBuffer);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, chunkDirty.size() * sizeof(GLuint), nullptr, GL_DYNAMIC_DRAW);
+        chunkFlagsBuffer.Allocate(chunkDirty.size() * sizeof(GLuint));
 
         EnsureScratchSized();
     }
@@ -254,16 +244,12 @@ namespace core {
         }
     }
     void Raymarcher::UploadPrimitiveSlots() {
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, primitivesBuffer);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, gpuSlots.size() * sizeof(GPUPrimitive), gpuSlots.data(), GL_DYNAMIC_DRAW);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, primitivesBuffer);
+        primitivesBuffer.Upload(gpuSlots);
+        primitivesBuffer.Bind();
     }
     void Raymarcher::UploadPrimitiveIndices(const std::vector<uint32_t>& indices) {
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, primitiveIndexBuffer);
-        GLuint dummy = 0;
-        if (indices.empty()) glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(GLuint), &dummy, GL_DYNAMIC_DRAW); // never bind an empty SSBO
-        else glBufferData(GL_SHADER_STORAGE_BUFFER, indices.size() * sizeof(uint32_t), indices.data(), GL_DYNAMIC_DRAW);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, primitiveIndexBuffer);
+        primitiveIndexBuffer.Upload(indices);
+        primitiveIndexBuffer.Bind();
         classifyShader->SetInt("primIndexCount", static_cast<int>(indices.size()));
     }
 
@@ -444,7 +430,7 @@ namespace core {
         finalSeedTex = pingIsA ? &seedTexA : &seedTexB;
 
         glm::ivec3 bg = Groups(boxDim);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, freeListBuffer);
+        freeListBuffer.Bind();
 
         // ---- release: dirty bricks give their old pool slot back ----
         releaseShader->SetVec3("_BoxMin", glm::vec3(box.min));
@@ -528,10 +514,7 @@ namespace core {
     }
 
     void Raymarcher::ReadBackFreeList() {
-        GLint header[2] = {0, 0};
-        glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, freeListBuffer);
-        glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(header), header);
+        const std::vector<GLint> header = freeListBuffer.Read<GLint>(2); // freeCount, droppedBricks
         poolSlotsUsed = GetPoolCapacity() - header[0];
         droppedBricks = header[1];
     }
@@ -554,9 +537,8 @@ namespace core {
         ResetFreeList();
         Fill(dirtyTex, glm::ivec3(0), brickGridResolution, 1.0f);
         std::vector<GLuint> zeros(chunkDirty.size(), 0);
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, chunkFlagsBuffer);
-        glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, zeros.size() * sizeof(GLuint), zeros.data());
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, chunkFlagsBuffer);
+        chunkFlagsBuffer.Write(zeros);
+        chunkFlagsBuffer.Bind();
 
         // ---- coarse pass: flag the chunks that may hold a surface, then settle the bricks of all other chunks ----
         const glm::vec3 voxelSize = (worldMax - worldMin) / glm::vec3(resolution);
@@ -588,9 +570,7 @@ namespace core {
         classifyShader->SetInt("_CoarsePass", 0);
         glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT | GL_SHADER_STORAGE_BARRIER_BIT);
 
-        std::vector<GLuint> chunkFlags(chunkDirty.size(), 0);
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, chunkFlagsBuffer);
-        glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, chunkFlags.size() * sizeof(GLuint), chunkFlags.data());
+        const std::vector<GLuint> chunkFlags = chunkFlagsBuffer.Read<GLuint>(chunkDirty.size());
 
         for (int z = 0; z < chunkGridDim.z; z++)
         for (int y = 0; y < chunkGridDim.y; y++)
@@ -808,7 +788,7 @@ namespace core {
 
         // the baked ids index the primitive slots; UpdateDynamic re-uploads them every frame so color edits show without a rebake
         marchMaterial->SetInt("primitiveCount", static_cast<int>(gpuSlots.size()));
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, primitivesBuffer);
+        primitivesBuffer.Bind();
 
         marchMaterial->Bind();
         materialLibrary->Bind(marchMaterial->GetShaderProgram());

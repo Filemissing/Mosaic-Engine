@@ -92,6 +92,8 @@ set(IMGUI_SOURCES
         "core/GL/Texture2D.cpp"
         "core/GL/Texture2D.h"
         "core/GL/TextureFormat.h"
+        core/GL/StorageBuffer.cpp
+        core/GL/StorageBuffer.h
 )
 
 add_executable(RawEngine main.cpp
