@@ -73,7 +73,6 @@ namespace core {
         gl::Texture3D dirtyTex;       // R8, brick grid, 1 = brick still has to be rebaked
 
         void EnsureBrickResourcesSized();
-        void DestroyBrickResources();
         void ResetFreeList();
 
         // chunked bake (scratch, sized from the VRAM budget)
@@ -106,7 +105,6 @@ namespace core {
         bool fullRebakeRequested = false;
 
         void EnsureScratchSized();
-        void DestroyScratchResources();
         void Fill(gl::Texture3D& r8Tex, glm::ivec3 origin, glm::ivec3 dim, float value);
         void StampDirty(glm::ivec3 brickMin, glm::ivec3 brickMax);
         void StampDirtyWorld(glm::vec3 min, glm::vec3 max);
@@ -152,7 +150,6 @@ namespace core {
         unsigned int noiseSeed = 12345;
 
         void EnsureNoiseResourcesSized();
-        void DestroyNoiseResources();
         void BakeNoise();
 
         // terrain settings

@@ -1,7 +1,7 @@
 #version 430 core
 layout (local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
 
-// one invocation per brick of the box being rebaked; only dirty bricks are touched
+// one invocation per brick of the box being rebaked, only dirty bricks are touched
 layout(r8, binding = 0) uniform readonly image3D brickFlags; // chunk-local, 1 = brick contains a seed
 layout(rgba32f, binding = 1) uniform writeonly image3D lookupOut;
 layout(r8, binding = 2) uniform readonly image3D dirtyTex;

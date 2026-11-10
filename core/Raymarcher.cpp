@@ -100,9 +100,6 @@ namespace core {
         glDeleteBuffers(1, &primitiveIndexBuffer);
         glDeleteBuffers(1, &freeListBuffer);
         glDeleteBuffers(1, &chunkFlagsBuffer);
-        DestroyScratchResources();
-        DestroyBrickResources();
-        DestroyNoiseResources();
 
         delete marchMaterial;
         delete materialLibrary;
@@ -320,8 +317,8 @@ namespace core {
         fillShader->SetVec3("_Origin", glm::vec3(origin));
         fillShader->SetVec3("_Dim", glm::vec3(dim));
         fillShader->SetFloat("_Value", value);
+        r8Tex.BindImage(0, GL_WRITE_ONLY);
         fillShader->Bind();
-        fillShader->BindImage(0, r8Tex.Id(), GL_WRITE_ONLY, GL_R8);
         glm::ivec3 g = Groups(dim);
         fillShader->Dispatch(g.x, g.y, g.z);
     }
@@ -481,7 +478,7 @@ namespace core {
         allocateShader->SetVec3("_PoolGridDim", glm::vec3(brickPoolDim));
         allocateShader->SetInt("BRICK_STORE", BRICK_STORE);
         allocateShader->Bind();
-        brickSignTex.BindImage(0, GL_READ_ONLY);
+        brickFlagsTex.BindImage(0, GL_READ_ONLY);
         lookupTex.BindImage(1, GL_WRITE_ONLY);
         dirtyTex.BindImage(2, GL_READ_ONLY);
         brickSignTex.BindImage(3, GL_READ_ONLY);
@@ -588,8 +585,8 @@ namespace core {
         classifyShader->SetVec3("_ChunkGridDim", glm::vec3(chunkGridDim));
         classifyShader->SetFloat("_CoarseMargin", coarseMargin);
         classifyShader->SetFloat("_Truncation", HALO * std::min({voxelSize.x, voxelSize.y, voxelSize.z}));
+        brickSignTex.BindImage(3, GL_WRITE_ONLY);
         classifyShader->Bind();
-        classifyShader->BindImage(3, brickSignTex.Id(), GL_WRITE_ONLY, GL_R8);
         glm::ivec3 g = Groups(brickGridResolution);
         classifyShader->Dispatch(g.x, g.y, g.z);
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
@@ -597,10 +594,10 @@ namespace core {
         settleShader->SetVec3("_GridResolution", glm::vec3(brickGridResolution));
         settleShader->SetInt("_ChunkBricks", chunkBricks);
         settleShader->SetVec3("_ChunkGridDim", glm::vec3(chunkGridDim));
+        brickSignTex.BindImage(0, GL_READ_ONLY);
+        lookupTex.BindImage(1, GL_WRITE_ONLY);
+        dirtyTex.BindImage(2, GL_WRITE_ONLY);
         settleShader->Bind();
-        settleShader->BindImage(0, brickSignTex.Id(), GL_READ_ONLY, GL_R8);
-        settleShader->BindImage(1, lookupTex.Id(), GL_WRITE_ONLY, GL_RGBA32F);
-        settleShader->BindImage(2, dirtyTex.Id(), GL_WRITE_ONLY, GL_R8);
         settleShader->Dispatch(g.x, g.y, g.z);
         classifyShader->SetInt("_CoarsePass", 0);
         glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT | GL_SHADER_STORAGE_BARRIER_BIT);
@@ -775,7 +772,7 @@ namespace core {
         }
 
         if (debug3D) {
-            gl::Texture3D* dTex = 0;
+            gl::Texture3D* dTex = nullptr;
             if (debugTex3D == dSignTex) dTex = &signTex;
             if (debugTex3D == dSeedTex) dTex = finalSeedTex;
             if (debugTex3D == dNoise3DTex) dTex = &noise3DTex;
@@ -788,7 +785,7 @@ namespace core {
         }
 
         if (debug2D) {
-            gl::Texture2D* dTex = 0;
+            gl::Texture2D* dTex = nullptr;
             if (debugTex2D == dNoise2DTex) dTex = &noise2DTex;
             RenderDebugTexture(targetFbo, dTex);
             return;

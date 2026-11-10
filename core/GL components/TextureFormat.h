@@ -5,7 +5,6 @@
 #ifndef RAWENGINE_TEXTUREFORMAT_H
 #define RAWENGINE_TEXTUREFORMAT_H
 #include <glad/glad.h>
-#include "imgui_impl_opengl3_loader.h"
 
 namespace core::gl {
     struct TextureFormat {

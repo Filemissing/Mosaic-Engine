@@ -5,8 +5,7 @@
 #ifndef RAWENGINE_TEXTURE2D_H
 #define RAWENGINE_TEXTURE2D_H
 #include <glm/vec2.hpp>
-
-#include "imgui_impl_opengl3_loader.h"
+#include <glad/glad.h>
 #include "TextureFormat.h"
 
 namespace core::gl {
