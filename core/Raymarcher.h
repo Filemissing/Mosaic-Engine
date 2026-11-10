@@ -13,6 +13,8 @@
 #include "Assets/model.h"
 #include "Components/Camera.h"
 #include "Components/Primitive.h"
+#include "GL components/Texture2D.h"
+#include "GL components/Texture3D.h"
 
 namespace core {
     class Raymarcher {
@@ -28,13 +30,13 @@ namespace core {
         bool dirty = true; // a full rebake is needed (volume settings, noise or terrain changed)
 
         // noise generation
-        GLuint noise2DTex = 0;
-        GLuint noise3DTex = 0;
+        gl::Texture2D noise2DTex;
+        gl::Texture3D noise3DTex;
 
         ComputeShader* noise2DShader;
         ComputeShader* noise3DShader;
 
-        // ---- primitives, stored by stable slot so baked ids survive adding/removing other primitives ----
+        // primitives, stored by stable slot so baked ids survive adding/removing other primitives
         struct PrimitiveSlot {
             bool used = false;
             bool baked = false;        // bakedGpu/aabb describe what's currently in the volume
@@ -54,7 +56,7 @@ namespace core {
         void UploadPrimitiveIndices(const std::vector<uint32_t>& indices);
         bool PrimitiveWorldAABB(const GPUPrimitive& p, glm::vec3& outMin, glm::vec3& outMax) const; // false = unbounded
 
-        // ---- brick pool (persistent) ----
+        // brick pool (persistent)
         static constexpr int BRICK_CORE = 8;
         static constexpr int BRICK_STORE = BRICK_CORE + 1; // 9 — includes the apron sample
         static constexpr int HALO = 2 * BRICK_CORE;       // voxels of context around a chunk; also the distance truncation
@@ -64,17 +66,17 @@ namespace core {
 
         GLuint freeListBuffer = 0; // SSBO binding 1: int freeCount, int droppedBricks, uint freeSlots[capacity]
 
-        GLuint brickPoolTex = 0;   // R16F, holds baked distances, laid out as brickPoolDim * BRICK_STORE texels
-        GLuint brickIdTex = 0;     // R16UI, same layout as brickPoolTex, primitive slot of the nearest primitive (for color)
-        GLuint brickSignTex = 0;   // R8, brick grid, sign of the brick's origin, used to determine solid/empty when inactive
-        GLuint lookupTex = 0;      // RGBA32F, brick grid, xyz = this brick's origin in pool space, w = 1 active / 0 empty / -1 solid
-        GLuint dirtyTex = 0;       // R8, brick grid, 1 = brick still has to be rebaked
+        gl::Texture3D brickPoolTex;   // R16F, holds baked distances, laid out as brickPoolDim * BRICK_STORE texels
+        gl::Texture3D brickIdTex;     // R16UI, same layout as brickPoolTex, primitive slot of the nearest primitive (for color)
+        gl::Texture3D brickSignTex;   // R8, brick grid, sign of the brick's origin, used to determine solid/empty when inactive
+        gl::Texture3D lookupTex;      // RGBA32F, brick grid, xyz = this brick's origin in pool space, w = 1 active / 0 empty / -1 solid
+        gl::Texture3D dirtyTex;       // R8, brick grid, 1 = brick still has to be rebaked
 
         void EnsureBrickResourcesSized();
         void DestroyBrickResources();
         void ResetFreeList();
 
-        // ---- chunked bake (scratch, sized from the VRAM budget) ----
+        // chunked bake (scratch, sized from the VRAM budget)
         ComputeShader* classifyShader = nullptr;
         ComputeShader* jfaStepShader = nullptr;
         ComputeShader* jfaFinalizeShader = nullptr;
@@ -86,26 +88,26 @@ namespace core {
 
         int chunkBricks = 1;                  // C: bricks per chunk axis
         glm::ivec3 chunkGridDim{1};
-        glm::ivec3 scratchDim{0};             // allocated scratch size in voxels
-        GLuint seedTexA = 0, seedTexB = 0;    // RGBA16F seed ping-pong, chunk-local coordinates
-        GLuint finalSeedTex = 0;
-        GLuint signTex = 0;                   // R8
-        GLuint idTex = 0;                     // R16UI
-        GLuint distTex = 0;                   // R16F, raw SDF value, used by seedFix to place seeds on missed sign changes
-        GLuint brickFlagsTex = 0;             // R8, (C + 4)^3 bricks: seed per brick for the core and a 2 brick halo
-        GLuint chunkFlagsBuffer = 0;          // SSBO binding 3, one uint per chunk, written by the coarse pass
+        glm::ivec3 scratchDim{0};       // allocated scratch size in voxels
+        gl::Texture3D seedTexA, seedTexB;    // RGBA16F seed ping-pong, chunk-local coordinates
+        gl::Texture3D* finalSeedTex = nullptr;
+        gl::Texture3D signTex;                   // R8
+        gl::Texture3D idTex;                     // R16UI
+        gl::Texture3D distTex;                   // R16F, raw SDF value, used by seedFix to place seeds on missed sign changes
+        gl::Texture3D brickFlagsTex;             // R8, (C + 4)^3 bricks: seed per brick for the core and a 2 brick halo
+        GLuint chunkFlagsBuffer;          // SSBO binding 3, one uint per chunk, written by the coarse pass
 
-        // dirty bookkeeping on the CPU, one box (in bricks) per chunk; mirrors which bits of dirtyTex are set
+        // dirty bookkeeping on the CPU, one box (in bricks) per chunk
         struct BrickBox {
             glm::ivec3 min{0}, max{-1};
             bool Empty() const { return max.x < min.x; }
         };
-        std::vector<BrickBox> chunkDirty;
+        std::vector<BrickBox> chunkDirty; // mirrors dirtyTex
         bool fullRebakeRequested = false;
 
         void EnsureScratchSized();
         void DestroyScratchResources();
-        void Fill(GLuint r8Tex, glm::ivec3 origin, glm::ivec3 dim, float value);
+        void Fill(gl::Texture3D& r8Tex, glm::ivec3 origin, glm::ivec3 dim, float value);
         void StampDirty(glm::ivec3 brickMin, glm::ivec3 brickMax);
         void StampDirtyWorld(glm::vec3 min, glm::vec3 max);
         void BakeChunkBox(const BrickBox& box);
@@ -159,7 +161,7 @@ namespace core {
         float lacunarity = 2.0f;
         float persistence = 0.3f;
         float heightScale = 60.0f;      // world units from the lowest to the highest plateau
-        float terrainScale = 0.12f;      // frequency of the large-scale elevation (where the mesas are)
+        float terrainScale = 0.12f;     // frequency of the large-scale elevation (where the mesas are)
         float terraceCount = 5.0f;      // plateau levels over the full height
         float cliffSharpness = 0.85f;   // 0 = smooth slopes between levels, 1 = sheer walls
         float detailAmount = 0.02f;     // small surface variation, fraction of the height scale
@@ -197,8 +199,8 @@ namespace core {
         void Bake(const std::vector<Primitive*>& primitives); // full bake, synchronous
         void UpdateDynamic(const std::vector<Primitive*>& primitives, glm::vec3 cameraPos); // per frame, before Render
         void Render(GLuint targetFbo, GLuint sceneColorTex, GLuint sceneDepthTex, Camera* cam);
-        void RenderDebugSlice(GLuint targetFbo, GLuint textureToView);
-        void RenderDebugTexture(GLuint targetFbo, GLuint textureToView);
+        void RenderDebugSlice(GLuint targetFbo, gl::Texture3D* textureToView);
+        void RenderDebugTexture(GLuint targetFbo, gl::Texture2D* textureToView);
 
         void SetWorldBounds(glm::vec3 min, glm::vec3 max);
         void MarkDirty() {dirty = true;}

@@ -16,8 +16,7 @@
 
 namespace core {
     namespace {
-        void CreateTex3D(GLuint& tex, GLenum internalFormat, glm::ivec3 dim, GLenum format, GLenum type,
-                         GLenum filter, const void* data = nullptr) {
+        void CreateTex3D(GLuint& tex, GLenum internalFormat, glm::ivec3 dim, GLenum format, GLenum type, GLenum filter, const void* data = nullptr) {
             glGenTextures(1, &tex);
             glBindTexture(GL_TEXTURE_3D, tex);
             glTexImage3D(GL_TEXTURE_3D, 0, internalFormat, dim.x, dim.y, dim.z, 0, format, type, data);
@@ -33,7 +32,6 @@ namespace core {
         }
         glm::ivec3 Groups(glm::ivec3 dim) { return (dim + glm::ivec3(7)) / 8; }
 
-        // same matrix as eulerToMat3 in classify.comp (glm's mat3 constructor is column-major, like GLSL's)
         glm::mat3 EulerToMat3(glm::vec3 euler) {
             glm::vec3 rad = glm::radians(euler);
             float cx = std::cos(rad.x), sx = std::sin(rad.x);
@@ -132,7 +130,7 @@ namespace core {
         resolution = newResolution;
         EnsureBrickResourcesSized();
 
-        chunkDirty.clear(); // the old grid is gone, everything is rebaked anyway
+        chunkDirty.clear(); // everything is rebaked
         ApplyBakeBudget();
 
         for (auto& slot : slots) slot.baked = false;
@@ -144,30 +142,20 @@ namespace core {
         }
     }
     void Raymarcher::EnsureBrickResourcesSized() {
-        DestroyBrickResources();
+        brickGridResolution = (resolution + glm::ivec3(BRICK_CORE - 1)) / BRICK_CORE;
+        const glm::ivec3 poolTexelSize = brickPoolDim * BRICK_STORE;
+        const size_t brickCount = static_cast<size_t>(brickGridResolution.x) * brickGridResolution.y * brickGridResolution.z;
 
-        brickGridResolution = (resolution + glm::ivec3(BRICK_CORE - 1)) / BRICK_CORE; // round up
-        glm::ivec3 poolTexelSize = brickPoolDim * BRICK_STORE;
-        size_t brickCount = static_cast<size_t>(brickGridResolution.x) * brickGridResolution.y * brickGridResolution.z;
+        brickPoolTex = gl::Texture3D(poolTexelSize, gl::formats::R16F,  GL_LINEAR);
+        brickIdTex   = gl::Texture3D(poolTexelSize, gl::formats::R16UI, GL_NEAREST);
 
-        CreateTex3D(brickPoolTex, GL_R16F, poolTexelSize, GL_RED, GL_HALF_FLOAT, GL_LINEAR);
-        CreateTex3D(brickIdTex, GL_R16UI, poolTexelSize, GL_RED_INTEGER, GL_UNSIGNED_SHORT, GL_NEAREST); // NEAREST — integer ids can't be filtered
-
-        // brick grid textures start zeroed: everything empty, nothing dirty, until the first bake
         std::vector<float> zeroLookup(brickCount * 4, 0.0f);
         std::vector<unsigned char> zeroBytes(brickCount, 0);
-        CreateTex3D(lookupTex, GL_RGBA32F, brickGridResolution, GL_RGBA, GL_FLOAT, GL_NEAREST, zeroLookup.data());
-        CreateTex3D(brickSignTex, GL_R8, brickGridResolution, GL_RED, GL_UNSIGNED_BYTE, GL_NEAREST, zeroBytes.data());
-        CreateTex3D(dirtyTex, GL_R8, brickGridResolution, GL_RED, GL_UNSIGNED_BYTE, GL_NEAREST, zeroBytes.data());
+        lookupTex    = gl::Texture3D(brickGridResolution, gl::formats::RGBA32F, GL_NEAREST, zeroLookup.data());
+        brickSignTex = gl::Texture3D(brickGridResolution, gl::formats::R8,      GL_NEAREST, zeroBytes.data());
+        dirtyTex     = gl::Texture3D(brickGridResolution, gl::formats::R8,      GL_NEAREST, zeroBytes.data());
 
         ResetFreeList();
-    }
-    void Raymarcher::DestroyBrickResources() {
-        DeleteTex(brickPoolTex);
-        DeleteTex(brickIdTex);
-        DeleteTex(lookupTex);
-        DeleteTex(brickSignTex);
-        DeleteTex(dirtyTex);
     }
     void Raymarcher::ResetFreeList() {
         const int capacity = GetPoolCapacity();
@@ -224,27 +212,16 @@ namespace core {
     }
     void Raymarcher::EnsureScratchSized() {
         glm::ivec3 dim = glm::min(glm::ivec3(chunkBricks * BRICK_CORE + 2 * HALO), resolution);
-        if (dim == scratchDim && seedTexA) return;
-        DestroyScratchResources();
+        if (dim == scratchDim && seedTexA.Id() != 0) return;
         scratchDim = dim;
 
-        CreateTex3D(seedTexA, GL_RGBA16F, scratchDim, GL_RGBA, GL_HALF_FLOAT, GL_NEAREST); // NEAREST — these are positions, not colors to blend
-        CreateTex3D(seedTexB, GL_RGBA16F, scratchDim, GL_RGBA, GL_HALF_FLOAT, GL_NEAREST);
-        CreateTex3D(signTex, GL_R8, scratchDim, GL_RED, GL_UNSIGNED_BYTE, GL_NEAREST);
-        CreateTex3D(idTex, GL_R16UI, scratchDim, GL_RED_INTEGER, GL_UNSIGNED_SHORT, GL_NEAREST);
-        CreateTex3D(distTex, GL_R16F, scratchDim, GL_RED, GL_HALF_FLOAT, GL_NEAREST);
-        CreateTex3D(brickFlagsTex, GL_R8, glm::ivec3(chunkBricks + 4), GL_RED, GL_UNSIGNED_BYTE, GL_NEAREST);
-        finalSeedTex = seedTexA;
-    }
-    void Raymarcher::DestroyScratchResources() {
-        DeleteTex(seedTexA);
-        DeleteTex(seedTexB);
-        DeleteTex(signTex);
-        DeleteTex(idTex);
-        DeleteTex(distTex);
-        DeleteTex(brickFlagsTex);
-        finalSeedTex = 0;
-        scratchDim = glm::ivec3(0);
+        seedTexA = gl::Texture3D(scratchDim, gl::formats::RGBA16F, GL_NEAREST);
+        seedTexB = gl::Texture3D(scratchDim, gl::formats::RGBA16F, GL_NEAREST);
+        signTex = gl::Texture3D(scratchDim, gl::formats::R8, GL_NEAREST);
+        idTex = gl::Texture3D(scratchDim, gl::formats::R16UI, GL_NEAREST);
+        distTex = gl::Texture3D(scratchDim, gl::formats::R16F, GL_NEAREST);
+        brickFlagsTex = gl::Texture3D(glm::ivec3(chunkBricks + 4), gl::formats::R8, GL_NEAREST);
+        finalSeedTex = &seedTexA;
     }
 
     // ---------------------------------------------------------------------------------------------------------
@@ -339,12 +316,12 @@ namespace core {
     // ---------------------------------------------------------------------------------------------------------
     // dirty tracking
     // ---------------------------------------------------------------------------------------------------------
-    void Raymarcher::Fill(GLuint r8Tex, glm::ivec3 origin, glm::ivec3 dim, float value) {
+    void Raymarcher::Fill(gl::Texture3D& r8Tex, glm::ivec3 origin, glm::ivec3 dim, float value) {
         fillShader->SetVec3("_Origin", glm::vec3(origin));
         fillShader->SetVec3("_Dim", glm::vec3(dim));
         fillShader->SetFloat("_Value", value);
         fillShader->Bind();
-        fillShader->BindImage(0, r8Tex, GL_WRITE_ONLY, GL_R8);
+        fillShader->BindImage(0, r8Tex.Id(), GL_WRITE_ONLY, GL_R8);
         glm::ivec3 g = Groups(dim);
         fillShader->Dispatch(g.x, g.y, g.z);
     }
@@ -398,8 +375,8 @@ namespace core {
         classifyShader->SetFloat("_OverhangStrength", overhangStrength);
         classifyShader->SetFloat("_OverhangScale", overhangScale);
         classifyShader->SetFloat("_CliffRoughness", cliffRoughness);
-        classifyShader->SetTexture2D("_Noise2D", noise2DTex);
-        classifyShader->SetTexture3D("_Noise3D", noise3DTex);
+        classifyShader->SetTexture2D("_Noise2D", noise2DTex.Id());
+        classifyShader->SetTexture3D("_Noise3D", noise3DTex.Id());
         classifyShader->SetFloat("_Noise2DFrequency", noise2DFrequency);
         classifyShader->SetFloat("_Noise3DFrequency", noise3DFrequency);
         classifyShader->SetInt("BRICK_CORE", BRICK_CORE);
@@ -444,12 +421,12 @@ namespace core {
         classifyShader->SetVec3("_CoreBrickMin", glm::vec3(box.min));
         classifyShader->SetVec3("_CoreBrickMax", glm::vec3(box.max));
         classifyShader->Bind();
-        classifyShader->BindImage(0, seedTexA, GL_WRITE_ONLY, GL_RGBA16F);
-        classifyShader->BindImage(1, signTex, GL_WRITE_ONLY, GL_R8);
-        classifyShader->BindImage(2, brickFlagsTex, GL_WRITE_ONLY, GL_R8);
-        classifyShader->BindImage(3, brickSignTex, GL_WRITE_ONLY, GL_R8);
-        classifyShader->BindImage(4, idTex, GL_WRITE_ONLY, GL_R16UI);
-        classifyShader->BindImage(5, distTex, GL_WRITE_ONLY, GL_R16F);
+        seedTexA.BindImage(0, GL_WRITE_ONLY);
+        signTex.BindImage(1, GL_WRITE_ONLY);
+        brickFlagsTex.BindImage(2, GL_WRITE_ONLY);
+        brickSignTex.BindImage(3, GL_WRITE_ONLY);
+        idTex.BindImage(4, GL_WRITE_ONLY);
+        distTex.BindImage(5, GL_WRITE_ONLY);
         glm::ivec3 g = Groups(dim);
         classifyShader->Dispatch(g.x, g.y, g.z);
 
@@ -460,28 +437,28 @@ namespace core {
         seedFixShader->SetVec3("_FlagDim", glm::vec3(flagDim));
         seedFixShader->SetInt("BRICK_CORE", BRICK_CORE);
         seedFixShader->Bind();
-        seedFixShader->BindImage(0, seedTexA, GL_READ_WRITE, GL_RGBA16F);
-        seedFixShader->BindImage(1, signTex, GL_READ_ONLY, GL_R8);
-        seedFixShader->BindImage(2, distTex, GL_READ_ONLY, GL_R16F);
-        seedFixShader->BindImage(3, brickFlagsTex, GL_WRITE_ONLY, GL_R8);
+        seedTexA.BindImage(0, GL_READ_WRITE);
+        signTex.BindImage(1, GL_READ_ONLY);
+        distTex.BindImage(2, GL_READ_ONLY);
+        brickFlagsTex.BindImage(3, GL_WRITE_ONLY);
         seedFixShader->Dispatch(g.x, g.y, g.z);
 
         // ---- JFA: seeds further than HALO are never trusted, so the steps start at HALO / 2 ----
         bool pingIsA = true;
         auto jfaPass = [&](int step) {
-            GLuint src = pingIsA ? seedTexA : seedTexB;
-            GLuint dst = pingIsA ? seedTexB : seedTexA;
+            gl::Texture3D& src = pingIsA ? seedTexA : seedTexB;
+            gl::Texture3D& dst = pingIsA ? seedTexB : seedTexA;
             jfaStepShader->SetInt("_Step", step);
             jfaStepShader->SetVec3("_Resolution", glm::vec3(dim)); // bounds of the scratch region
             jfaStepShader->Bind();
-            jfaStepShader->BindImage(0, src, GL_READ_ONLY, GL_RGBA16F);
-            jfaStepShader->BindImage(1, dst, GL_WRITE_ONLY, GL_RGBA16F);
+            src.BindImage(0, GL_READ_ONLY);
+            dst.BindImage(1, GL_WRITE_ONLY);
             jfaStepShader->Dispatch(g.x, g.y, g.z);
             pingIsA = !pingIsA;
         };
         jfaPass(1); // 1+JFA extra pass
         for (int step = HALO / 2; step >= 1; step /= 2) jfaPass(step);
-        finalSeedTex = pingIsA ? seedTexA : seedTexB;
+        finalSeedTex = pingIsA ? &seedTexA : &seedTexB;
 
         glm::ivec3 bg = Groups(boxDim);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, freeListBuffer);
@@ -492,8 +469,8 @@ namespace core {
         releaseShader->SetVec3("_PoolGridDim", glm::vec3(brickPoolDim));
         releaseShader->SetInt("BRICK_STORE", BRICK_STORE);
         releaseShader->Bind();
-        releaseShader->BindImage(0, dirtyTex, GL_READ_ONLY, GL_R8);
-        releaseShader->BindImage(1, lookupTex, GL_READ_ONLY, GL_RGBA32F);
+        dirtyTex.BindImage(0, GL_READ_ONLY);
+        lookupTex.BindImage(1, GL_READ_ONLY);
         releaseShader->Dispatch(bg.x, bg.y, bg.z);
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT); // pushes must land before the pops
 
@@ -504,10 +481,10 @@ namespace core {
         allocateShader->SetVec3("_PoolGridDim", glm::vec3(brickPoolDim));
         allocateShader->SetInt("BRICK_STORE", BRICK_STORE);
         allocateShader->Bind();
-        allocateShader->BindImage(0, brickFlagsTex, GL_READ_ONLY, GL_R8);
-        allocateShader->BindImage(1, lookupTex, GL_WRITE_ONLY, GL_RGBA32F);
-        allocateShader->BindImage(2, dirtyTex, GL_READ_ONLY, GL_R8);
-        allocateShader->BindImage(3, brickSignTex, GL_READ_ONLY, GL_R8);
+        brickSignTex.BindImage(0, GL_READ_ONLY);
+        lookupTex.BindImage(1, GL_WRITE_ONLY);
+        dirtyTex.BindImage(2, GL_READ_ONLY);
+        brickSignTex.BindImage(3, GL_READ_ONLY);
         allocateShader->Dispatch(bg.x, bg.y, bg.z);
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
@@ -522,13 +499,13 @@ namespace core {
         jfaFinalizeShader->SetInt("BRICK_CORE", BRICK_CORE);
         jfaFinalizeShader->SetInt("BRICK_STORE", BRICK_STORE);
         jfaFinalizeShader->Bind();
-        jfaFinalizeShader->BindImage(0, finalSeedTex, GL_READ_ONLY, GL_RGBA16F);
-        jfaFinalizeShader->BindImage(1, signTex, GL_READ_ONLY, GL_R8);
-        jfaFinalizeShader->BindImage(2, brickPoolTex, GL_WRITE_ONLY, GL_R16F);
-        jfaFinalizeShader->BindImage(3, lookupTex, GL_READ_ONLY, GL_RGBA32F);
-        jfaFinalizeShader->BindImage(4, idTex, GL_READ_ONLY, GL_R16UI);
-        jfaFinalizeShader->BindImage(5, brickIdTex, GL_WRITE_ONLY, GL_R16UI);
-        jfaFinalizeShader->BindImage(6, dirtyTex, GL_READ_ONLY, GL_R8);
+        finalSeedTex->BindImage(0, GL_READ_ONLY);
+        signTex.BindImage(1, GL_READ_ONLY);
+        brickPoolTex.BindImage(2, GL_WRITE_ONLY);
+        lookupTex.BindImage(3, GL_READ_ONLY);
+        idTex.BindImage(4, GL_READ_ONLY);
+        brickIdTex.BindImage(5, GL_WRITE_ONLY);
+        dirtyTex.BindImage(6, GL_READ_ONLY);
         glm::ivec3 fg = Groups(boxDim * BRICK_STORE);
         jfaFinalizeShader->Dispatch(fg.x, fg.y, fg.z);
 
@@ -612,7 +589,7 @@ namespace core {
         classifyShader->SetFloat("_CoarseMargin", coarseMargin);
         classifyShader->SetFloat("_Truncation", HALO * std::min({voxelSize.x, voxelSize.y, voxelSize.z}));
         classifyShader->Bind();
-        classifyShader->BindImage(3, brickSignTex, GL_WRITE_ONLY, GL_R8);
+        classifyShader->BindImage(3, brickSignTex.Id(), GL_WRITE_ONLY, GL_R8);
         glm::ivec3 g = Groups(brickGridResolution);
         classifyShader->Dispatch(g.x, g.y, g.z);
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
@@ -621,9 +598,9 @@ namespace core {
         settleShader->SetInt("_ChunkBricks", chunkBricks);
         settleShader->SetVec3("_ChunkGridDim", glm::vec3(chunkGridDim));
         settleShader->Bind();
-        settleShader->BindImage(0, brickSignTex, GL_READ_ONLY, GL_R8);
-        settleShader->BindImage(1, lookupTex, GL_WRITE_ONLY, GL_RGBA32F);
-        settleShader->BindImage(2, dirtyTex, GL_WRITE_ONLY, GL_R8);
+        settleShader->BindImage(0, brickSignTex.Id(), GL_READ_ONLY, GL_R8);
+        settleShader->BindImage(1, lookupTex.Id(), GL_WRITE_ONLY, GL_RGBA32F);
+        settleShader->BindImage(2, dirtyTex.Id(), GL_WRITE_ONLY, GL_R8);
         settleShader->Dispatch(g.x, g.y, g.z);
         classifyShader->SetInt("_CoarsePass", 0);
         glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT | GL_SHADER_STORAGE_BARRIER_BIT);
@@ -679,7 +656,7 @@ namespace core {
         SyncPrimitiveSlots(primitives); // also stamps the old bounds of removed primitives
         UpdateMaterials();
 
-        for (const auto& [p, s] : slotOf) {
+        for (const auto &s: slotOf | std::views::values) {
             PrimitiveSlot& slot = slots[s];
             const GPUPrimitive& current = gpuSlots[s];
             if (slot.baked && !GeometryDiffers(current, slot.bakedGpu)) continue; // unchanged (color doesn't need a rebake)
@@ -691,8 +668,11 @@ namespace core {
             if (!newBounded || (slot.baked && slot.unbounded)) {
                 fullRebakeRequested = true;
             } else {
-                if (slot.baked) StampDirtyWorld(slot.aabbMin, slot.aabbMax); // where it was
-                StampDirtyWorld(newMin, newMax);                             // where it is now
+                if (slot.baked) StampDirtyWorld(slot.aabbMin, slot.aabbMax); // where it was becomes where it isn't
+                StampDirtyWorld(newMin, newMax);                             // where it wasn't becomes where it is
+                // The primitive knows where it is at all times. It knows this because it knows where it isn't. By subtracting where it is from where it isn't, or where it isn't from where it is (whichever is greater), it obtains a difference, or deviation. The guidance subsystem uses deviations to generate corrective commands to drive the primitive from a position where it is to a position where it isn't, and arriving at a position where it wasn't, it now is. Consequently, the position where it is, is now the position that it wasn't, and it follows that the position that it was, is now the position that it isn't.
+                // In the event that the position that it is in is not the position that it wasn't, the system has acquired a variation, the variation being the difference between where the primitive is, and where it wasn't. If variation is considered to be a significant factor, it too may be corrected by the GEA. However, the primitive must also know where it was.
+                // The primitive's guidance computer scenario works as follows. Because a variation has modified some of the information the primitive has obtained, it is not sure just where it is. However, it is sure where it isn't, within reason, and it knows where it was. It now subtracts where it should be from where it wasn't, or vice-versa, and by differentiating this from the algebraic sum of where it shouldn't be, and where it was, it is able to obtain the deviation and its variation, which is called error.
             }
 
             slot.bakedGpu = current;
@@ -729,62 +709,8 @@ namespace core {
     // noise
     // ---------------------------------------------------------------------------------------------------------
     void Raymarcher::EnsureNoiseResourcesSized() {
-        DestroyNoiseResources();
-
-        // 2D noise
-        glGenTextures(1, &noise2DTex);
-        glBindTexture(GL_TEXTURE_2D, noise2DTex);
-
-        glTexImage2D(
-            GL_TEXTURE_2D,
-            0,
-            GL_R16F,
-            noise2DResolution.x,
-            noise2DResolution.y,
-            0,
-            GL_RED,
-            GL_HALF_FLOAT,
-            nullptr
-        );
-
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-
-
-        // 3D noise
-        glGenTextures(1, &noise3DTex);
-        glBindTexture(GL_TEXTURE_3D, noise3DTex);
-
-        glTexImage3D(
-            GL_TEXTURE_3D,
-            0,
-            GL_R16F,
-            noise3DResolution.x,
-            noise3DResolution.y,
-            noise3DResolution.z,
-            0,
-            GL_RED,
-            GL_HALF_FLOAT,
-            nullptr
-        );
-
-        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_REPEAT);
-
-        glBindTexture(GL_TEXTURE_2D, 0);
-        glBindTexture(GL_TEXTURE_3D, 0);
-    }
-    void Raymarcher::DestroyNoiseResources()
-    {
-        if (noise2DTex) glDeleteTextures(1, &noise2DTex);
-        if (noise3DTex) glDeleteTextures(1, &noise3DTex);
+        noise2DTex = gl::Texture2D(noise2DResolution, gl::formats::R16F, GL_LINEAR);
+        noise3DTex = gl::Texture3D(noise3DResolution, gl::formats::R16F, GL_LINEAR);
     }
     void Raymarcher::BakeNoise() {
         EnsureNoiseResourcesSized();
@@ -792,15 +718,8 @@ namespace core {
         // 2D noise
         noise2DShader->SetVec3("_Resolution", glm::vec3(noise2DResolution, 0));
         noise2DShader->SetInt("_Seed", noiseSeed);
-
+        noise2DTex.BindImage(0, GL_WRITE_ONLY);
         noise2DShader->Bind();
-
-        noise2DShader->BindImage(
-            0,
-            noise2DTex,
-            GL_WRITE_ONLY,
-            GL_R16F
-        );
 
         const int noise2DGX = (noise2DResolution.x + 7) / 8;
         const int noise2DGY = (noise2DResolution.y + 7) / 8;
@@ -812,15 +731,8 @@ namespace core {
         // 3D noise
         noise3DShader->SetVec3("_Resolution", glm::vec3(noise3DResolution));
         noise3DShader->SetInt("_Seed", noiseSeed);
-
+        noise3DTex.BindImage(0, GL_WRITE_ONLY);
         noise3DShader->Bind();
-
-        noise3DShader->BindImage(
-            0,
-            noise3DTex,
-            GL_WRITE_ONLY,
-            GL_R16F
-        );
 
         const int noise3DGX = (noise3DResolution.x + 7) / 8;
         const int noise3DGY = (noise3DResolution.y + 7) / 8;
@@ -863,21 +775,21 @@ namespace core {
         }
 
         if (debug3D) {
-            GLuint dTex = 0;
-            if (debugTex3D == dSignTex) dTex = signTex;
+            gl::Texture3D* dTex = 0;
+            if (debugTex3D == dSignTex) dTex = &signTex;
             if (debugTex3D == dSeedTex) dTex = finalSeedTex;
-            if (debugTex3D == dNoise3DTex) dTex = noise3DTex;
-            if (debugTex3D == dBrickFlagsTex) dTex = brickFlagsTex;
-            if (debugTex3D == dLookupTex) dTex = lookupTex;
-            if (debugTex3D == dDirtyTex) dTex = dirtyTex;
-            if (debugTex3D == dBrickPoolTex) dTex = brickPoolTex;
+            if (debugTex3D == dNoise3DTex) dTex = &noise3DTex;
+            if (debugTex3D == dBrickFlagsTex) dTex = &brickFlagsTex;
+            if (debugTex3D == dLookupTex) dTex = &lookupTex;
+            if (debugTex3D == dDirtyTex) dTex = &dirtyTex;
+            if (debugTex3D == dBrickPoolTex) dTex = &brickPoolTex;
             RenderDebugSlice(targetFbo, dTex);
             return;
         }
 
         if (debug2D) {
-            GLuint dTex = 0;
-            if (debugTex2D == dNoise2DTex) dTex = noise2DTex;
+            gl::Texture2D* dTex = 0;
+            if (debugTex2D == dNoise2DTex) dTex = &noise2DTex;
             RenderDebugTexture(targetFbo, dTex);
             return;
         }
@@ -887,9 +799,9 @@ namespace core {
 
         marchMaterial->SetTexture2D("_MainTex", sceneColorTex);
         marchMaterial->SetTexture2D("_SceneDepth", sceneDepthTex);
-        marchMaterial->SetTexture3D("_LookupTex", lookupTex);
-        marchMaterial->SetTexture3D("_BrickPoolTex", brickPoolTex);
-        marchMaterial->SetTexture3D("_BrickIdTex", brickIdTex);
+        marchMaterial->SetTexture3D("_LookupTex", lookupTex.Id());
+        marchMaterial->SetTexture3D("_BrickPoolTex", brickPoolTex.Id());
+        marchMaterial->SetTexture3D("_BrickIdTex", brickIdTex.Id());
 
         marchMaterial->SetVec3("_WorldMin", worldMin);
         marchMaterial->SetVec3("_WorldMax", worldMax);
@@ -927,12 +839,12 @@ namespace core {
         double usedMiB = (totalMemKb - availMemKb) / 1024.0;
         editor::editorWindows::BenchmarkTool::PushSample("VRAM used during render (MiB)", usedMiB);
     }
-    void Raymarcher::RenderDebugSlice(GLuint targetFbo, GLuint textureToView) {
+    void Raymarcher::RenderDebugSlice(GLuint targetFbo, gl::Texture3D* textureToView) {
         glBindFramebuffer(GL_FRAMEBUFFER, targetFbo);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         glDisable(GL_DEPTH_TEST);
 
-        debugSliceMaterial->SetTexture3D("_Volume", textureToView);
+        debugSliceMaterial->SetTexture3D("_Volume", textureToView->Id());
         debugSliceMaterial->SetFloat("_SliceZ", static_cast<float>(sliceZ) / static_cast<float>(resolution.z));
         debugSliceMaterial->SetInt("_Mode", mode);
         debugSliceMaterial->SetFloat("_DisplayScale", displayScale);
@@ -942,12 +854,12 @@ namespace core {
         glEnable(GL_DEPTH_TEST);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
     }
-    void Raymarcher::RenderDebugTexture(GLuint targetFbo, GLuint textureToView) {
+    void Raymarcher::RenderDebugTexture(GLuint targetFbo, gl::Texture2D* textureToView) {
         glBindFramebuffer(GL_FRAMEBUFFER, targetFbo);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         glDisable(GL_DEPTH_TEST);
 
-        debugTextureMaterial->SetTexture2D("_Texture", textureToView);
+        debugTextureMaterial->SetTexture2D("_Texture", textureToView->Id());
         debugTextureMaterial->SetInt("_Mode", mode);
         debugTextureMaterial->SetFloat("_DisplayScale", displayScale);
         debugTextureMaterial->Bind();
