@@ -92,19 +92,6 @@ namespace core {
         //     )
         // );
 
-        // postProcessingEffects.push_back(
-        //     new PostProcessEffect("Test",
-        //         {
-        //             new PostProcessPass(
-        //                 new Material(
-        //                     "Assets/shaders/PostProcecssion/viewspace.vert",
-        //                     "Assets/shaders/raymarching/bake.frag"
-        //                 )
-        //             )
-        //         }
-        //     )
-        // );
-
         std::vector<Mesh> meshes = std::vector<Mesh>();
         meshes.push_back(Mesh::generateQuad());
         quadModel = new Model(std::move(meshes));
