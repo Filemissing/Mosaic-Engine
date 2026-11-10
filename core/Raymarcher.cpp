@@ -16,20 +16,6 @@
 
 namespace core {
     namespace {
-        void CreateTex3D(GLuint& tex, GLenum internalFormat, glm::ivec3 dim, GLenum format, GLenum type, GLenum filter, const void* data = nullptr) {
-            glGenTextures(1, &tex);
-            glBindTexture(GL_TEXTURE_3D, tex);
-            glTexImage3D(GL_TEXTURE_3D, 0, internalFormat, dim.x, dim.y, dim.z, 0, format, type, data);
-            glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, filter);
-            glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, filter);
-            glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-            glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-            glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
-        }
-        void DeleteTex(GLuint& tex) {
-            if (tex) glDeleteTextures(1, &tex);
-            tex = 0;
-        }
         glm::ivec3 Groups(glm::ivec3 dim) { return (dim + glm::ivec3(7)) / 8; }
 
         glm::mat3 EulerToMat3(glm::vec3 euler) {
