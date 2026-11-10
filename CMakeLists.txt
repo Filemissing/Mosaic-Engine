@@ -87,11 +87,11 @@ set(IMGUI_SOURCES
         editor/EditorWindows/RaymarcherWindow.h
         core/Assets/ComputeShader.cpp
         core/Assets/ComputeShader.h
-        "core/GL components/Texture3D.cpp"
-        "core/GL components/Texture3D.h"
-        "core/GL components/Texture2D.cpp"
-        "core/GL components/Texture2D.h"
-        "core/GL components/TextureFormat.h"
+        "core/GL/Texture3D.cpp"
+        "core/GL/Texture3D.h"
+        "core/GL/Texture2D.cpp"
+        "core/GL/Texture2D.h"
+        "core/GL/TextureFormat.h"
 )
 
 add_executable(RawEngine main.cpp

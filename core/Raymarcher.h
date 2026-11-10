@@ -13,8 +13,8 @@
 #include "Assets/model.h"
 #include "Components/Camera.h"
 #include "Components/Primitive.h"
-#include "GL components/Texture2D.h"
-#include "GL components/Texture3D.h"
+#include "GL/Texture2D.h"
+#include "GL/Texture3D.h"
 
 namespace core {
     class Raymarcher {
