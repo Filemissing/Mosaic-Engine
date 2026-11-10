@@ -2,8 +2,8 @@
 // Created by micha on 10/11/2026.
 //
 
-#ifndef RAWENGINE_TEXTURE2D_H
-#define RAWENGINE_TEXTURE2D_H
+#ifndef RAWENGINE_TEXTURE3D_H
+#define RAWENGINE_TEXTURE3D_H
 #include <glad/glad.h>
 #include <glm/glm.hpp>
 
