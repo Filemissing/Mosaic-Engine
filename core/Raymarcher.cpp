@@ -18,17 +18,6 @@ namespace core {
     namespace {
         glm::ivec3 Groups(glm::ivec3 dim) { return (dim + glm::ivec3(7)) / 8; }
 
-        glm::mat3 EulerToMat3(glm::vec3 euler) {
-            glm::vec3 rad = glm::radians(euler);
-            float cx = std::cos(rad.x), sx = std::sin(rad.x);
-            float cy = std::cos(rad.y), sy = std::sin(rad.y);
-            float cz = std::cos(rad.z), sz = std::sin(rad.z);
-            glm::mat3 rx(1, 0, 0, 0, cx, -sx, 0, sx, cx);
-            glm::mat3 ry(cy, 0, sy, 0, 1, 0, -sy, 0, cy);
-            glm::mat3 rz(cz, -sz, 0, sz, cz, 0, 0, 0, 1);
-            return rz * ry * rx;
-        }
-
         bool GeometryDiffers(const GPUPrimitive& a, const GPUPrimitive& b) {
             return a.position != b.position || a.rotation != b.rotation || a.scale != b.scale || a.data != b.data;
         }
@@ -228,7 +217,7 @@ namespace core {
             PrimitiveSlot& slot = slots[it->second];
             if (slot.baked) {
                 if (slot.unbounded) fullRebakeRequested = true;
-                else if (autoRebake) StampDirtyWorld(slot.aabbMin, slot.aabbMax);
+                else if (autoRebake) StampDirtyWorld(slot.aabb);
                 else dirty = true;
             }
             slot = PrimitiveSlot{};
@@ -251,35 +240,6 @@ namespace core {
         primitiveIndexBuffer.Upload(indices);
         primitiveIndexBuffer.Bind();
         classifyShader->SetInt("primIndexCount", static_cast<int>(indices.size()));
-    }
-
-    bool Raymarcher::PrimitiveWorldAABB(const GPUPrimitive& p, glm::vec3& outMin, glm::vec3& outMax) const {
-        // local bounds per type, read off the SDFs in classify.comp (before scaling)
-        glm::vec3 d = glm::abs(glm::vec3(p.data));
-        glm::vec3 lo, hi;
-        switch (static_cast<int>(p.position.w)) {
-            case Primitive::Sphere:   hi = glm::vec3(d.x); lo = -hi; break;
-            case Primitive::Box:      hi = d; lo = -hi; break;
-            case Primitive::Pyramid:  lo = glm::vec3(-d.x, 0.0f, -d.x); hi = glm::vec3(d.x, d.y, d.x); break; // data.x = base half size, data.y = height
-            case Primitive::Capsule:  hi = glm::vec3(d.x, d.y + d.x, d.x); lo = -hi; break;
-            case Primitive::Cylinder: hi = glm::vec3(d.x, d.y, d.x); lo = -hi; break;
-            case Primitive::Torus:    hi = glm::vec3(d.x + d.y, d.y, d.x + d.y); lo = -hi; break;
-            case Primitive::Cone:     hi = glm::vec3(d.x, d.y, d.x); lo = -hi; break; // conservative: height in both directions
-            default: return false; // plane, terrain: unbounded
-        }
-
-        // classify maps world -> local as R * (p - pos) / scale, so local -> world is pos + R^T * (local * scale)
-        glm::mat3 toWorld = glm::transpose(EulerToMat3(glm::vec3(p.rotation)));
-        glm::vec3 scale = glm::vec3(p.scale);
-        outMin = glm::vec3(1e30f);
-        outMax = glm::vec3(-1e30f);
-        for (int i = 0; i < 8; i++) {
-            glm::vec3 corner((i & 1) ? hi.x : lo.x, (i & 2) ? hi.y : lo.y, (i & 4) ? hi.z : lo.z);
-            glm::vec3 w = glm::vec3(p.position) + toWorld * (corner * scale);
-            outMin = glm::min(outMin, w);
-            outMax = glm::max(outMax, w);
-        }
-        return true;
     }
 
     // ---------------------------------------------------------------------------------------------------------
@@ -314,13 +274,13 @@ namespace core {
             else { d.min = glm::min(d.min, lo); d.max = glm::max(d.max, hi); }
         }
     }
-    void Raymarcher::StampDirtyWorld(glm::vec3 min, glm::vec3 max) {
+    void Raymarcher::StampDirtyWorld(const AABB& bounds) {
         // distances change up to the truncation distance (HALO) from the surface, and one more brick can change
         // activity through the neighbour dilation; +1 voxel for the apron
         glm::vec3 voxelSize = (worldMax - worldMin) / glm::vec3(resolution);
         glm::vec3 margin = voxelSize * static_cast<float>(HALO + BRICK_CORE + 1);
-        glm::vec3 v0 = (min - margin - worldMin) / voxelSize;
-        glm::vec3 v1 = (max + margin - worldMin) / voxelSize;
+        glm::vec3 v0 = (bounds.min - margin - worldMin) / voxelSize;
+        glm::vec3 v1 = (bounds.max + margin - worldMin) / voxelSize;
         StampDirty(glm::ivec3(glm::floor(v0 / static_cast<float>(BRICK_CORE))),
                    glm::ivec3(glm::floor(v1 / static_cast<float>(BRICK_CORE))));
     }
@@ -372,8 +332,8 @@ namespace core {
         for (uint32_t s = 0; s < slots.size(); s++) {
             const PrimitiveSlot& slot = slots[s];
             if (!slot.used) continue;
-            if (slot.unbounded || (glm::all(glm::lessThanEqual(slot.aabbMin, regionMax)) &&
-                                   glm::all(glm::greaterThanEqual(slot.aabbMax, regionMin))))
+            if (slot.unbounded || (glm::all(glm::lessThanEqual(slot.aabb.min, regionMax)) &&
+                                   glm::all(glm::greaterThanEqual(slot.aabb.max, regionMin))))
                 indices.push_back(s);
         }
         UploadPrimitiveIndices(indices);
@@ -526,10 +486,12 @@ namespace core {
 
         // everything is rebuilt, so the current state of every primitive becomes the baked state
         SyncPrimitiveSlots(primitives);
-        for (const auto& [p, s] : slotOf) {
+        for (const auto& [primitive, s] : slotOf) {
             PrimitiveSlot& slot = slots[s];
             slot.bakedGpu = gpuSlots[s];
-            slot.unbounded = !PrimitiveWorldAABB(slot.bakedGpu, slot.aabbMin, slot.aabbMax);
+            const std::optional<AABB> bounds = primitive->GetWorldBounds();
+            slot.unbounded = !bounds.has_value();
+            slot.aabb = bounds.value_or(AABB{});
             slot.baked = true;
         }
         UploadPrimitiveSlots();
@@ -619,29 +581,27 @@ namespace core {
         SyncPrimitiveSlots(primitives); // also stamps the old bounds of removed primitives
         UpdateMaterials();
 
-        for (const auto &s: slotOf | std::views::values) {
+        for (const auto& [primitive, s] : slotOf) {
             PrimitiveSlot& slot = slots[s];
             const GPUPrimitive& current = gpuSlots[s];
             if (slot.baked && !GeometryDiffers(current, slot.bakedGpu)) continue; // unchanged (color doesn't need a rebake)
 
             if (!autoRebake) { dirty = true; continue; } // leave the baked state alone, "Rebake Now" does a full bake
 
-            glm::vec3 newMin, newMax;
-            bool newBounded = PrimitiveWorldAABB(current, newMin, newMax);
-            if (!newBounded || (slot.baked && slot.unbounded)) {
+            const std::optional<AABB> newBounds = primitive->GetWorldBounds();
+            if (!newBounds || (slot.baked && slot.unbounded)) {
                 fullRebakeRequested = true;
             } else {
-                if (slot.baked) StampDirtyWorld(slot.aabbMin, slot.aabbMax); // where it was becomes where it isn't
-                StampDirtyWorld(newMin, newMax);                             // where it wasn't becomes where it is
+                if (slot.baked) StampDirtyWorld(slot.aabb); // where it was becomes where it isn't
+                StampDirtyWorld(*newBounds);                // where it wasn't becomes where it is
                 // The primitive knows where it is at all times. It knows this because it knows where it isn't. By subtracting where it is from where it isn't, or where it isn't from where it is (whichever is greater), it obtains a difference, or deviation. The guidance subsystem uses deviations to generate corrective commands to drive the primitive from a position where it is to a position where it isn't, and arriving at a position where it wasn't, it now is. Consequently, the position where it is, is now the position that it wasn't, and it follows that the position that it was, is now the position that it isn't.
                 // In the event that the position that it is in is not the position that it wasn't, the system has acquired a variation, the variation being the difference between where the primitive is, and where it wasn't. If variation is considered to be a significant factor, it too may be corrected by the GEA. However, the primitive must also know where it was.
                 // The primitive's guidance computer scenario works as follows. Because a variation has modified some of the information the primitive has obtained, it is not sure just where it is. However, it is sure where it isn't, within reason, and it knows where it was. It now subtracts where it should be from where it wasn't, or vice-versa, and by differentiating this from the algebraic sum of where it shouldn't be, and where it was, it is able to obtain the deviation and its variation, which is called error.
             }
 
             slot.bakedGpu = current;
-            slot.aabbMin = newMin;
-            slot.aabbMax = newMax;
-            slot.unbounded = !newBounded;
+            slot.aabb = newBounds.value_or(AABB{});
+            slot.unbounded = !newBounds.has_value();
             slot.baked = true;
         }
 

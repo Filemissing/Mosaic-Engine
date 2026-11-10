@@ -6,11 +6,18 @@
 #define RAWENGINE_PRIMITIVE_H
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
+#include <optional>
 #include <string>
 
 #include "Component.h"
 
 namespace core {
+    // axis-aligned bounding box in world space
+    struct AABB {
+        glm::vec3 min{0.0f};
+        glm::vec3 max{0.0f};
+    };
+
     struct GPUPrimitive {
         glm::vec4 position; // xyz = position, w = type
         glm::vec4 rotation; // xyz = rotation
@@ -42,6 +49,8 @@ namespace core {
         std::string materialPath; // Assets/Materials/*.json, empty = default material
 
         GPUPrimitive GetGPUPrimitive() const;
+        // world-space bounds of the shape (rotation and scale included), empty for unbounded types (plane, terrain)
+        std::optional<AABB> GetWorldBounds() const;
 
         void Start() override;
         void OnInspectorGUI() override;

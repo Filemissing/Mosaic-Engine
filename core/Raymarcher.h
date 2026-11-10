@@ -42,7 +42,7 @@ namespace core {
             bool used = false;
             bool baked = false;        // bakedGpu/aabb describe what's currently in the volume
             GPUPrimitive bakedGpu{};
-            glm::vec3 aabbMin{}, aabbMax{};
+            AABB aabb{};               // world bounds of the baked state (unused when unbounded)
             bool unbounded = false;    // plane/terrain: changes need a full rebake
         };
         gl::StorageBuffer primitivesBuffer{gl::ssbo::Primitives}; // SSBO binding 0, one GPUPrimitive per slot (free slots have type -1)
@@ -55,7 +55,6 @@ namespace core {
         void SyncPrimitiveSlots(const std::vector<Primitive*>& primitives);
         void UploadPrimitiveSlots();
         void UploadPrimitiveIndices(const std::vector<uint32_t>& indices);
-        bool PrimitiveWorldAABB(const GPUPrimitive& p, glm::vec3& outMin, glm::vec3& outMax) const; // false = unbounded
 
         // brick pool (persistent)
         static constexpr int BRICK_CORE = 8;
@@ -108,7 +107,7 @@ namespace core {
         void EnsureScratchSized();
         void Fill(gl::Texture3D& r8Tex, glm::ivec3 origin, glm::ivec3 dim, float value);
         void StampDirty(glm::ivec3 brickMin, glm::ivec3 brickMax);
-        void StampDirtyWorld(glm::vec3 min, glm::vec3 max);
+        void StampDirtyWorld(const AABB& bounds);
         void BakeChunkBox(const BrickBox& box);
         int ProcessDirtyChunks(int maxChunks, glm::vec3 cameraPos);
         void SetCommonClassifyUniforms();
