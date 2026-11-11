@@ -12,7 +12,7 @@ namespace core::gl {
     class Texture2D {
     public:
         Texture2D() = default; // empty, Id() == 0
-        Texture2D(glm::ivec2 size, TextureFormat tf, GLenum filter, const void* data = nullptr);
+        Texture2D(glm::ivec2 size, TextureFormat tf, GLenum filter, const void* data = nullptr, GLenum wrap = GL_CLAMP_TO_EDGE);
         ~Texture2D();
 
         Texture2D(const Texture2D&) = delete;

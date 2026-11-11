@@ -13,7 +13,7 @@ namespace core::gl {
     class Texture3D {
     public:
         Texture3D() = default; // empty, Id() == 0
-        Texture3D(glm::ivec3 size, TextureFormat tf, GLenum filter, const void* data = nullptr);
+        Texture3D(glm::ivec3 size, TextureFormat tf, GLenum filter, const void* data = nullptr, GLenum wrap = GL_CLAMP_TO_EDGE);
         ~Texture3D();
 
         Texture3D(const Texture3D&) = delete;

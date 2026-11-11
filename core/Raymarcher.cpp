@@ -632,8 +632,8 @@ namespace core {
     // noise
     // ---------------------------------------------------------------------------------------------------------
     void Raymarcher::EnsureNoiseResourcesSized() {
-        noise2DTex = gl::Texture2D(noise2DResolution, gl::formats::R16F, GL_LINEAR);
-        noise3DTex = gl::Texture3D(noise3DResolution, gl::formats::R16F, GL_LINEAR);
+        noise2DTex = gl::Texture2D(noise2DResolution, gl::formats::R16F, GL_LINEAR, nullptr, GL_REPEAT);
+        noise3DTex = gl::Texture3D(noise3DResolution, gl::formats::R16F, GL_LINEAR, nullptr, GL_REPEAT);
     }
     void Raymarcher::BakeNoise() {
         EnsureNoiseResourcesSized();

@@ -20,14 +20,14 @@ namespace core::gl {
         return *this;
     }
 
-    Texture2D::Texture2D(glm::ivec2 size, TextureFormat tf, GLenum filter, const void* data) {
+    Texture2D::Texture2D(glm::ivec2 size, TextureFormat tf, GLenum filter, const void* data, GLenum wrap) {
         glGenTextures(1, &id);
         glBindTexture(GL_TEXTURE_2D, id);
         glTexImage2D(GL_TEXTURE_2D, 0, tf.internalFormat, size.x, size.y, 0, tf.format, tf.type, data);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrap);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrap);
 
         this->size = size;
         this->format = tf;

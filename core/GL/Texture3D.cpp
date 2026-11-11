@@ -20,15 +20,15 @@ namespace core::gl {
         return *this;
     }
 
-    Texture3D::Texture3D(glm::ivec3 size, TextureFormat tf, GLenum filter, const void* data) {
+    Texture3D::Texture3D(glm::ivec3 size, TextureFormat tf, GLenum filter, const void* data, GLenum wrap) {
         glGenTextures(1, &id);
         glBindTexture(GL_TEXTURE_3D, id);
         glTexImage3D(GL_TEXTURE_3D, 0, tf.internalFormat, size.x, size.y, size.z, 0, tf.format, tf.type, data);
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, filter);
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, filter);
-        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, wrap);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, wrap);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, wrap);
 
         this->size = size;
         this->format = tf;
