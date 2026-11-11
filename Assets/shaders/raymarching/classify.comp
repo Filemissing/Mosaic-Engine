@@ -57,60 +57,64 @@ const float NOISE2D_TEXELS_PER_CELL = 8.0; // must match noise2D.comp
 const float NOISE3D_TEXELS_PER_CELL = 4.0; // must match noise3D.comp
 
 // Cubic B-spline filtering from 4 bilinear taps. Plain bilinear filtering has a slope discontinuity at every texel
-// line, which shows as straight light/dark bands once the terrain is magnified; the B-spline is C2 continuous.
+// line, which shows as straight light/dark bands once the terrain is magnified but the B-spline is C2 continuous.
 float textureBSpline2D(sampler2D tex, vec2 uv) {
-    vec2 res = vec2(textureSize(tex, 0));
-    vec2 st = uv * res - 0.5;
-    vec2 i = floor(st);
-    vec2 f = st - i;
+    vec2 textureResolution = vec2(textureSize(tex, 0));
+    vec2 texelPosition = uv * textureResolution - 0.5; // texel centers at whole numbers
+    vec2 baseTexel = floor(texelPosition);
+    vec2 fraction = texelPosition - baseTexel;          // 0..1 between baseTexel and baseTexel + 1
 
-    vec2 w0 = (1.0 - f) * (1.0 - f) * (1.0 - f) / 6.0;
-    vec2 w1 = (3.0 * f * f * f - 6.0 * f * f + 4.0) / 6.0;
-    vec2 w2 = (-3.0 * f * f * f + 3.0 * f * f + 3.0 * f + 1.0) / 6.0;
-    vec2 w3 = f * f * f / 6.0;
+    // cubic B-spline weights of the 4 texels around the sample point (they always sum to 1)
+    vec2 weight0 = (1.0 - fraction) * (1.0 - fraction) * (1.0 - fraction) / 6.0;
+    vec2 weight1 = (3.0 * fraction * fraction * fraction - 6.0 * fraction * fraction + 4.0) / 6.0;
+    vec2 weight2 = (-3.0 * fraction * fraction * fraction + 3.0 * fraction * fraction + 3.0 * fraction + 1.0) / 6.0;
+    vec2 weight3 = fraction * fraction * fraction / 6.0;
 
-    vec2 g0 = w0 + w1;
-    vec2 g1 = w2 + w3;
-    vec2 p0 = (i - 1.0 + w1 / g0 + 0.5) / res;
-    vec2 p1 = (i + 1.0 + w3 / g1 + 0.5) / res;
+    // each pair's total weight, and the position between its two texels where linear filtering mixes them in the
+    // ratio of their weights (+ 0.5 back to texel centers, / resolution back to uv)
+    vec2 lowPairWeight = weight0 + weight1;
+    vec2 highPairWeight = weight2 + weight3;
+    vec2 lowPairUv = (baseTexel - 1.0 + weight1 / lowPairWeight + 0.5) / textureResolution;
+    vec2 highPairUv = (baseTexel + 1.0 + weight3 / highPairWeight + 0.5) / textureResolution;
 
-    return g0.y * (g0.x * texture(tex, vec2(p0.x, p0.y)).r + g1.x * texture(tex, vec2(p1.x, p0.y)).r)
-         + g1.y * (g0.x * texture(tex, vec2(p0.x, p1.y)).r + g1.x * texture(tex, vec2(p1.x, p1.y)).r);
+    return lowPairWeight.y  * (lowPairWeight.x * texture(tex, vec2(lowPairUv.x, lowPairUv.y)).r  + highPairWeight.x * texture(tex, vec2(highPairUv.x, lowPairUv.y)).r)
+         + highPairWeight.y * (lowPairWeight.x * texture(tex, vec2(lowPairUv.x, highPairUv.y)).r + highPairWeight.x * texture(tex, vec2(highPairUv.x, highPairUv.y)).r);
 }
 
-// same in 3D, 8 trilinear taps
+// same in 3D, 8 trilinear taps: the 2D version once for the low z pair and once for the high z pair, then blended along z
 float textureBSpline3D(sampler3D tex, vec3 uvw) {
-    vec3 res = vec3(textureSize(tex, 0));
-    vec3 st = uvw * res - 0.5;
-    vec3 i = floor(st);
-    vec3 f = st - i;
+    vec3 textureResolution = vec3(textureSize(tex, 0));
+    vec3 texelPosition = uvw * textureResolution - 0.5; // texel centers at whole numbers
+    vec3 baseTexel = floor(texelPosition);
+    vec3 fraction = texelPosition - baseTexel;           // 0..1 between baseTexel and baseTexel + 1
 
-    vec3 w0 = (1.0 - f) * (1.0 - f) * (1.0 - f) / 6.0;
-    vec3 w1 = (3.0 * f * f * f - 6.0 * f * f + 4.0) / 6.0;
-    vec3 w2 = (-3.0 * f * f * f + 3.0 * f * f + 3.0 * f + 1.0) / 6.0;
-    vec3 w3 = f * f * f / 6.0;
+    // cubic B-spline weights of the 4 texels around the sample point (they always sum to 1)
+    vec3 weight0 = (1.0 - fraction) * (1.0 - fraction) * (1.0 - fraction) / 6.0;
+    vec3 weight1 = (3.0 * fraction * fraction * fraction - 6.0 * fraction * fraction + 4.0) / 6.0;
+    vec3 weight2 = (-3.0 * fraction * fraction * fraction + 3.0 * fraction * fraction + 3.0 * fraction + 1.0) / 6.0;
+    vec3 weight3 = fraction * fraction * fraction / 6.0;
 
-    vec3 g0 = w0 + w1;
-    vec3 g1 = w2 + w3;
-    vec3 p0 = (i - 1.0 + w1 / g0 + 0.5) / res;
-    vec3 p1 = (i + 1.0 + w3 / g1 + 0.5) / res;
+    // each pair's total weight, and where linear filtering mixes its two texels in the ratio of their weights
+    vec3 lowPairWeight = weight0 + weight1;
+    vec3 highPairWeight = weight2 + weight3;
+    vec3 lowPairUvw = (baseTexel - 1.0 + weight1 / lowPairWeight + 0.5) / textureResolution;
+    vec3 highPairUvw = (baseTexel + 1.0 + weight3 / highPairWeight + 0.5) / textureResolution;
 
-    float z0 = g0.y * (g0.x * texture(tex, vec3(p0.x, p0.y, p0.z)).r + g1.x * texture(tex, vec3(p1.x, p0.y, p0.z)).r)
-             + g1.y * (g0.x * texture(tex, vec3(p0.x, p1.y, p0.z)).r + g1.x * texture(tex, vec3(p1.x, p1.y, p0.z)).r);
-    float z1 = g0.y * (g0.x * texture(tex, vec3(p0.x, p0.y, p1.z)).r + g1.x * texture(tex, vec3(p1.x, p0.y, p1.z)).r)
-             + g1.y * (g0.x * texture(tex, vec3(p0.x, p1.y, p1.z)).r + g1.x * texture(tex, vec3(p1.x, p1.y, p1.z)).r);
-    return g0.z * z0 + g1.z * z1;
+    float lowZValue =
+        lowPairWeight.y * (lowPairWeight.x * texture(tex, vec3(lowPairUvw.x, lowPairUvw.y, lowPairUvw.z)).r + highPairWeight.x * texture(tex, vec3(highPairUvw.x, lowPairUvw.y, lowPairUvw.z)).r)
+      + highPairWeight.y * (lowPairWeight.x * texture(tex, vec3(lowPairUvw.x, highPairUvw.y, lowPairUvw.z)).r + highPairWeight.x * texture(tex, vec3(highPairUvw.x, highPairUvw.y, lowPairUvw.z)).r);
+    float highZValue =
+        lowPairWeight.y * (lowPairWeight.x * texture(tex, vec3(lowPairUvw.x, lowPairUvw.y, highPairUvw.z)).r + highPairWeight.x * texture(tex, vec3(highPairUvw.x, lowPairUvw.y, highPairUvw.z)).r)
+      + highPairWeight.y * (lowPairWeight.x * texture(tex, vec3(lowPairUvw.x, highPairUvw.y, highPairUvw.z)).r + highPairWeight.x * texture(tex, vec3(highPairUvw.x, highPairUvw.y, highPairUvw.z)).r);
+    return lowPairWeight.z * lowZValue + highPairWeight.z * highZValue;
 }
 
-float sampleNoise2D(vec2 p)
-{
+float sampleNoise2D(vec2 p) {
     vec2 cells = max(round(vec2(textureSize(_Noise2D, 0)) / NOISE2D_TEXELS_PER_CELL), vec2(1.0));
     vec2 uv = p * _Noise2DFrequency / (NOISE_CELL_SIZE * cells);
     return textureBSpline2D(_Noise2D, fract(uv)); // the texture tiles (GL_REPEAT), fract only keeps uv small
 }
-
-float sampleNoise3D(vec3 p)
-{
+float sampleNoise3D(vec3 p) {
     vec3 cells = max(round(vec3(textureSize(_Noise3D, 0)) / NOISE3D_TEXELS_PER_CELL), vec3(1.0));
     vec3 uvw = p * _Noise3DFrequency / (NOISE_CELL_SIZE * cells);
     return textureBSpline3D(_Noise3D, fract(uvw));
@@ -391,7 +395,7 @@ Hit mapScene(vec3 p) {
             d = TerrainSDF(localP, _Octaves, _HeightScale, _Lacunarity, _Persistence);
         }
         else {
-            continue; // free slot or unknown type — contributes nothing
+            continue; // free slot or unknown type
         }
 
         if (d < h.dist) {
@@ -405,95 +409,97 @@ Hit mapScene(vec3 p) {
 
 // Coarse pass: decide per world brick whether a surface can be near, from one SDF sample at its center, and flag
 // that brick's chunk. Every brick also gets its center sign. settle.comp then settles only the bricks of chunks
-// with no candidate at all; inside flagged chunks every brick is decided by the full classify, so one misjudged
+// with no candidate at all, inside flagged chunks every brick is decided by the full classify, so one misjudged
 // brick (fine terrain detail can fool a single sample) can't turn into a solid block or a hole.
 void coarseMain() {
     ivec3 brick = ivec3(gl_GlobalInvocationID);
     if (any(greaterThanEqual(brick, ivec3(_GridResolution)))) return;
 
     vec3 voxelSize = (_WorldMax - _WorldMin) / _Resolution;
-    vec3 center = _WorldMin + (vec3(brick * BRICK_CORE) + 0.5 * float(BRICK_CORE)) * voxelSize;
-    float halfDiagonal = 0.5 * length(float(BRICK_CORE) * voxelSize);
+    vec3 brickCenter = _WorldMin + (vec3(brick * BRICK_CORE) + 0.5 * float(BRICK_CORE)) * voxelSize;
+    float brickHalfDiagonal = 0.5 * length(float(BRICK_CORE) * voxelSize); // center to corner
 
-    float d = mapScene(center).dist;
+    float centerDistance = mapScene(brickCenter).dist;
 
     // Not every SDF here is an exact distance: terrain returns the vertical distance p.y - h, which on a slope is
     // far larger than the real distance. Dividing by the gradient length turns it into the distance to the
-    // tangent plane (exact for planar slopes, unchanged for exact SDFs where |grad| = 1).
-    float e = 0.25 * halfDiagonal;
-    vec3 grad = vec3(
-        mapScene(center + vec3(e, 0, 0)).dist - mapScene(center - vec3(e, 0, 0)).dist,
-        mapScene(center + vec3(0, e, 0)).dist - mapScene(center - vec3(0, e, 0)).dist,
-        mapScene(center + vec3(0, 0, e)).dist - mapScene(center - vec3(0, 0, e)).dist) / (2.0 * e);
-    float distEstimate = abs(d) / max(length(grad), 1.0);
+    // tangent plane (exact for planar slopes, unchanged for exact SDFs where |gradient| = 1).
+    float gradientStep = 0.25 * brickHalfDiagonal;
+    vec3 gradient = vec3(
+        mapScene(brickCenter + vec3(gradientStep, 0, 0)).dist - mapScene(brickCenter - vec3(gradientStep, 0, 0)).dist,
+        mapScene(brickCenter + vec3(0, gradientStep, 0)).dist - mapScene(brickCenter - vec3(0, gradientStep, 0)).dist,
+        mapScene(brickCenter + vec3(0, 0, gradientStep)).dist - mapScene(brickCenter - vec3(0, 0, gradientStep)).dist) / (2.0 * gradientStep);
+    float distanceEstimate = abs(centerDistance) / max(length(gradient), 1.0);
 
     // _CoarseMargin > 1 leaves room for curvature the tangent plane doesn't capture; _Truncation covers the
     // neighbour dilation, since bricks next to a surface brick also need pool data
-    bool candidate = distEstimate < _CoarseMargin * halfDiagonal + _Truncation;
+    bool isNearSurface = distanceEstimate < _CoarseMargin * brickHalfDiagonal + _Truncation;
 
-    imageStore(brickSignOut, brick, vec4((d <= 0.0) ? 1.0 : 0.0));
-    if (candidate) {
+    imageStore(brickSignOut, brick, vec4((centerDistance <= 0.0) ? 1.0 : 0.0));
+    if (isNearSurface) {
         ivec3 chunk = brick / _ChunkBricks;
-        ivec3 cg = ivec3(_ChunkGridDim);
-        chunkHasCandidates[chunk.x + chunk.y * cg.x + chunk.z * cg.x * cg.y] = 1u;
+        ivec3 chunkGrid = ivec3(_ChunkGridDim);
+        chunkHasCandidates[chunk.x + chunk.y * chunkGrid.x + chunk.z * chunkGrid.x * chunkGrid.y] = 1u;
     }
 }
 
 void main() {
     if (_CoarsePass == 1) { coarseMain(); return; }
 
-    ivec3 local = ivec3(gl_GlobalInvocationID);
-    if (any(greaterThanEqual(local, ivec3(_ChunkDim)))) return; // dispatch may overshoot the scratch region
-    ivec3 texel = local + ivec3(_ChunkVoxelOrigin); // world voxel
+    ivec3 scratchVoxel = ivec3(gl_GlobalInvocationID);
+    if (any(greaterThanEqual(scratchVoxel, ivec3(_ChunkDim)))) return; // dispatch may overshoot the scratch region
+    ivec3 worldVoxel = scratchVoxel + ivec3(_ChunkVoxelOrigin);
 
-    vec3 uvw = (vec3(texel) + 0.5) / vec3(_Resolution);
-    vec3 worldPos = _WorldMin + uvw * (_WorldMax - _WorldMin);
-    float voxelSize = length((_WorldMax - _WorldMin) / _Resolution); // gets the maximum size of a voxel (corner to corner)
+    vec3 volumeUvw = (vec3(worldVoxel) + 0.5) / vec3(_Resolution);
+    vec3 worldPos = _WorldMin + volumeUvw * (_WorldMax - _WorldMin);
+    float voxelDiagonal = length((_WorldMax - _WorldMin) / _Resolution); // the largest distance inside a voxel (corner to corner)
 
-    Hit h = mapScene(worldPos);
-    float m_sign = (h.dist <= 0.0) ? 1.0 : 0.0;           // every voxel gets this
-    float isSeed = (abs(h.dist) < voxelSize) ? 1.0 : 0.0; // only near-surface voxels
+    Hit hit = mapScene(worldPos);
+    float isInside = (hit.dist <= 0.0) ? 1.0 : 0.0;           // every voxel gets this
+    float isSeed = (abs(hit.dist) < voxelDiagonal) ? 1.0 : 0.0; // only near-surface voxels
 
-    vec3 refinedTexel = vec3(texel); // fallback stays, but should rarely trigger now
+    vec3 seedPosition = vec3(worldVoxel); // in world voxels; the voxel itself unless refined below
 
     if (isSeed > 0.5) {
-        float eps = voxelSize * 0.25;
+        float gradientStep = voxelDiagonal * 0.25;
 
-        float dx = mapScene(worldPos + vec3(eps,0,0)).dist - mapScene(worldPos - vec3(eps,0,0)).dist;
-        float dy = mapScene(worldPos + vec3(0,eps,0)).dist - mapScene(worldPos - vec3(0,eps,0)).dist;
-        float dz = mapScene(worldPos + vec3(0,0,eps)).dist - mapScene(worldPos - vec3(0,0,eps)).dist;
-        vec3 grad = vec3(dx, dy, dz);
+        float gradientX = mapScene(worldPos + vec3(gradientStep, 0, 0)).dist - mapScene(worldPos - vec3(gradientStep, 0, 0)).dist;
+        float gradientY = mapScene(worldPos + vec3(0, gradientStep, 0)).dist - mapScene(worldPos - vec3(0, gradientStep, 0)).dist;
+        float gradientZ = mapScene(worldPos + vec3(0, 0, gradientStep)).dist - mapScene(worldPos - vec3(0, 0, gradientStep)).dist;
+        vec3 gradient = vec3(gradientX, gradientY, gradientZ);
 
-        if (length(grad) > 1e-6) {
+        if (length(gradient) > 1e-6) {
             // Newton step to the zero-crossing: exact for planar surfaces, also when the SDF isn't an exact distance
-            // (terrain's vertical distance is too large by |grad| on steep cliffs, so d * normalize(grad) overshoots)
-            grad /= 2.0 * eps;
-            vec3 step = h.dist * grad / dot(grad, grad);
+            // (terrain's vertical distance is too large by |gradient| on steep cliffs, so d * normalize(gradient) overshoots)
+            gradient /= 2.0 * gradientStep;
+            vec3 newtonStep = hit.dist * gradient / dot(gradient, gradient);
             // a seed voxel is within one voxel diagonal of the surface, a longer step means a bad gradient
-            float stepLength = length(step);
-            if (stepLength > voxelSize) step *= voxelSize / stepLength;
-            vec3 surfaceWorldPos = worldPos - step;
+            float stepLength = length(newtonStep);
+            if (stepLength > voxelDiagonal) newtonStep *= voxelDiagonal / stepLength;
+            vec3 surfaceWorldPos = worldPos - newtonStep;
 
             vec3 surfaceUvw = (surfaceWorldPos - _WorldMin) / (_WorldMax - _WorldMin);
-            refinedTexel = surfaceUvw * vec3(_Resolution) - 0.5;
+            seedPosition = surfaceUvw * vec3(_Resolution) - 0.5;
         }
     }
 
-    // seeds are stored chunk-local: small coordinates keep their precision in RGBA16F
-    imageStore(seedOut, local, vec4(refinedTexel - _ChunkVoxelOrigin, isSeed));
-    imageStore(signOut, local, vec4(m_sign));
-    imageStore(distOut, local, vec4(clamp(h.dist, -60000.0, 60000.0))); // stay inside the R16F range
-    imageStore(idOut, local, uvec4(h.id < 0 ? 0xFFFFu : uint(h.id)));
+    // seeds are stored scratch-local: small coordinates keep their precision in RGBA16F
+    imageStore(seedOut, scratchVoxel, vec4(seedPosition - _ChunkVoxelOrigin, isSeed));
+    imageStore(signOut, scratchVoxel, vec4(isInside));
+    imageStore(distOut, scratchVoxel, vec4(clamp(hit.dist, -60000.0, 60000.0))); // stay inside the R16F range
+    imageStore(idOut, scratchVoxel, uvec4(hit.id < 0 ? 0xFFFFu : uint(hit.id)));
 
-    ivec3 brickIndex = texel / BRICK_CORE;
+    ivec3 brick = worldVoxel / BRICK_CORE;
     if (isSeed > 0.5) {
-        ivec3 flag = brickIndex - ivec3(_FlagOrigin);
+        ivec3 flag = brick - ivec3(_FlagOrigin); // this brick in brickFlags
         if (all(greaterThanEqual(flag, ivec3(0))) && all(lessThan(flag, ivec3(_FlagDim))))
             imageStore(brickFlagsOut, flag, vec4(1.0));
     }
-    // only writes the bricks origin, this works because it's only used for bricks that aren't near a surface and thus have a uniform sign
-    if (texel == brickIndex * BRICK_CORE
-        && all(greaterThanEqual(brickIndex, ivec3(_CoreBrickMin))) && all(lessThanEqual(brickIndex, ivec3(_CoreBrickMax)))) {
-        imageStore(brickSignOut, brickIndex, vec4(m_sign));
+    // only the brick's origin voxel writes the brick sign: it's only used for bricks that aren't near a surface, and
+    // those have the same sign everywhere
+    bool isBrickOrigin = (worldVoxel == brick * BRICK_CORE);
+    bool isInCore = all(greaterThanEqual(brick, ivec3(_CoreBrickMin))) && all(lessThanEqual(brick, ivec3(_CoreBrickMax)));
+    if (isBrickOrigin && isInCore) {
+        imageStore(brickSignOut, brick, vec4(isInside));
     }
 }

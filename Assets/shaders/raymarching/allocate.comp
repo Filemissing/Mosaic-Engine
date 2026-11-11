@@ -44,13 +44,12 @@ void main() {
         return;
     }
 
-    // pop a slot; on underflow undo the decrement (it only ever undoes this invocation's own -1, so the count
-    // can't rise above the real number of free slots)
+    // pop a slot, on underflow undo the decrement
     int old = atomicAdd(freeCount, -1);
     if (old <= 0) {
         atomicAdd(freeCount, 1);
         atomicAdd(droppedBricks, 1);
-        imageStore(lookupOut, brickIndex, vec4(0.0)); // pool full — rendered as empty
+        imageStore(lookupOut, brickIndex, vec4(0.0)); // pool full renders as empty
         return;
     }
     uint slot = freeSlots[old - 1];

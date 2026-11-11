@@ -161,7 +161,7 @@ layout(std430, binding = 6) readonly buffer MaterialBuffer {
 uniform int materialCount;
 uniform sampler2DArray _MaterialTextures;
 
-// what a surface shader gets...
+// surface shader input
 struct SurfaceInput {
     vec3 worldPos;
     vec3 worldNormal;
@@ -173,7 +173,7 @@ struct SurfaceInput {
     int primitive;
     int material;
 };
-// ...and what it produces
+// surface shader output
 struct SurfaceData {
     vec3 albedo;
     vec3 normal;       // world space
