@@ -53,12 +53,7 @@ int main() {
     RenderSettings::Init();
 
     //Scene
-    auto* scene1 = SceneManager::LoadScene("Showcase");
-    Editor::activeScene = scene1;
-
-    // Texture CMGaToTexture("Assets/textures/CMGaTo_crop.png");
-    // Texture MarbleTexture("Assets/textures/Marble.png");
-    // Texture MetalTexture("Assets/textures/Metal.png");
+    SceneManager::SetActiveScene(SceneManager::LoadScene("Showcase"));
 
     bool hasMeminfo = HasNVXMemoryInfo();
     printf("VRam info available: %s \n", hasMeminfo ? "yes" : "no");
@@ -71,17 +66,6 @@ int main() {
 
         // draw the editor
         Editor::Draw();
-
-        // set material values
-        // if (auto CMGaTo = Editor::activeScene->FindGameObjectByName("CMGaTo")) {
-        //     CMGaTo->GetComponent<MeshRenderer>()->GetMaterial()->SetTexture("_MainTex", CMGaToTexture.getId());
-        // }
-        // if (auto Suzanne = Editor::activeScene->FindGameObjectByName("Suzanne")) {
-        //     Suzanne->GetComponent<MeshRenderer>()->GetMaterial()->SetTexture("_MainTex", MarbleTexture.getId());
-        // }
-        // if (auto Sphere = Editor::activeScene->FindGameObjectByName("Sphere")) {
-        //     Sphere->GetComponent<MeshRenderer>()->GetMaterial()->SetTexture("_MainTex", MetalTexture.getId());
-        // }
 
         if (Editor::activeScene != nullptr)
             Editor::activeScene->Update();

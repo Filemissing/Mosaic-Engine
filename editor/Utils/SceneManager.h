@@ -13,7 +13,7 @@ namespace editor {
         static void SaveScene(const core::Scene* scene, const std::string& sceneName = "");
         static core::Scene* LoadScene(const std::string& name);
 
-        static void DestoryActiveScene();
+        static void DestroyActiveScene();
         static void SetActiveScene(core::Scene* scene);
     };
 } // editor

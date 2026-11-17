@@ -450,7 +450,7 @@ void main() {
     if (any(greaterThanEqual(scratchVoxel, ivec3(_ChunkDim)))) return; // dispatch may overshoot the scratch region
     ivec3 worldVoxel = scratchVoxel + ivec3(_ChunkVoxelOrigin);
 
-    vec3 volumeUvw = (vec3(worldVoxel) + 0.5) / vec3(_Resolution);
+    vec3 volumeUvw = vec3(worldVoxel) / vec3(_Resolution);
     vec3 worldPos = _WorldMin + volumeUvw * (_WorldMax - _WorldMin);
     float voxelDiagonal = length((_WorldMax - _WorldMin) / _Resolution); // the largest distance inside a voxel (corner to corner)
 
@@ -479,7 +479,7 @@ void main() {
             vec3 surfaceWorldPos = worldPos - newtonStep;
 
             vec3 surfaceUvw = (surfaceWorldPos - _WorldMin) / (_WorldMax - _WorldMin);
-            seedPosition = surfaceUvw * vec3(_Resolution) - 0.5;
+            seedPosition = surfaceUvw * vec3(_Resolution);
         }
     }
 

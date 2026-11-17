@@ -63,11 +63,13 @@ namespace editor {
         return scene;
     }
 
-    void SceneManager::DestoryActiveScene() {
+    void SceneManager::DestroyActiveScene() {
+        if (Editor::activeScene == nullptr) return;
+
         delete Editor::activeScene;
     }
     void SceneManager::SetActiveScene(Scene* scene) {
-        DestoryActiveScene();
+        DestroyActiveScene();
 
         Editor::activeScene = scene;
     }
