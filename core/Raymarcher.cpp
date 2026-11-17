@@ -534,16 +534,18 @@ namespace core {
 
         const std::vector<GLuint> chunkFlags = chunkFlagsBuffer.Read<GLuint>(chunkDirty.size());
 
-        for (int z = 0; z < chunkGridDim.z; z++)
-        for (int y = 0; y < chunkGridDim.y; y++)
-        for (int x = 0; x < chunkGridDim.x; x++) {
-            int i = x + y * chunkGridDim.x + z * chunkGridDim.x * chunkGridDim.y;
-            BrickBox box;
-            if (chunkFlags[i]) {
-                box.min = glm::ivec3(x, y, z) * chunkBricks;
-                box.max = glm::min(box.min + chunkBricks - 1, brickGridResolution - 1);
+        for (int z = 0; z < chunkGridDim.z; z++) {
+            for (int y = 0; y < chunkGridDim.y; y++) {
+                for (int x = 0; x < chunkGridDim.x; x++) {
+                    int i = x + y * chunkGridDim.x + z * chunkGridDim.x * chunkGridDim.y;
+                    BrickBox box;
+                    if (chunkFlags[i]) {
+                        box.min = glm::ivec3(x, y, z) * chunkBricks;
+                        box.max = glm::min(box.min + chunkBricks - 1, brickGridResolution - 1);
+                    }
+                    chunkDirty[i] = box;
+                }
             }
-            chunkDirty[i] = box;
         }
 
         // ---- chunk pipeline for every flagged chunk, no per-frame limit ----
@@ -638,7 +640,7 @@ namespace core {
 
         // 2D noise
         noise2DShader->SetVec3("_Resolution", glm::vec3(noise2DResolution, 0));
-        noise2DShader->SetInt("_Seed", noiseSeed);
+        noise2DShader->SetInt("_Seed", static_cast<int>(noiseSeed));
         noise2DTex.BindImage(0, GL_WRITE_ONLY);
         noise2DShader->Bind();
 
@@ -651,7 +653,7 @@ namespace core {
 
         // 3D noise
         noise3DShader->SetVec3("_Resolution", glm::vec3(noise3DResolution));
-        noise3DShader->SetInt("_Seed", noiseSeed);
+        noise3DShader->SetInt("_Seed", static_cast<int>(noiseSeed));
         noise3DTex.BindImage(0, GL_WRITE_ONLY);
         noise3DShader->Bind();
 
