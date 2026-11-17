@@ -26,9 +26,31 @@ namespace core {
         bool m_partialQueryInFlight = false;
 
         // general settings
+        bool dirty = true; // a full rebake is needed (volume settings, noise or terrain changed)
+
+        // Octree
         glm::ivec3 resolution{};
         glm::vec3 worldMin{}, worldMax{};
-        bool dirty = true; // a full rebake is needed (volume settings, noise or terrain changed)
+
+        struct BrickBox {
+            glm::ivec3 min{0}, max{-1};
+            bool Empty() const { return max.x < min.x; }
+        };
+        struct OctreeLevel {
+            float voxelSize = 0.0f;
+            glm::vec3 gridOrigin{0.0f};
+            int brickGridResolution = 0;
+            gl::Texture3D brickSignTex;   // R8, brick grid, sign of the brick's origin, used to determine solid/empty when inactive
+            gl::Texture3D lookupTex;      // RGBA32F, brick grid, xyz = this brick's origin in pool space, w = 1 active / 0 empty / -1 solid
+            gl::Texture3D dirtyTex;       // R8, brick grid, 1 = brick still has to be rebaked
+            glm::ivec3 chunkGridDim{1};      // chunks per axis
+            std::vector<BrickBox> chunkDirty; // mirrors dirtyTex
+
+            float BrickSize() const { return voxelSize * BRICK_CORE; }
+            float GridSize() const { return BrickSize() * static_cast<float>(brickGridResolution); }
+        };
+        int treeLevelCount = 5;             // used from step 2 on, EnsureVolumeSized creates the levels
+        std::vector<OctreeLevel> treeLevels; // index 0 = finest
 
         // noise generation
         gl::Texture2D noise2DTex;
@@ -61,18 +83,14 @@ namespace core {
         static constexpr int BRICK_STORE = BRICK_CORE + 1; // 9 — includes the apron sample
         static constexpr int HALO = 2 * BRICK_CORE;       // voxels of context around a chunk; also the distance truncation
 
-        glm::ivec3 brickGridResolution = glm::ivec3(0); // number of bricks per axis
         glm::ivec3 brickPoolDim = glm::ivec3(64); // the dimensions of the brick pool
 
         gl::StorageBuffer freeListBuffer{gl::ssbo::FreeList}; // SSBO binding 1: int freeCount, int droppedBricks, uint freeSlots[capacity]
 
         gl::Texture3D brickPoolTex;   // R16F, holds baked distances, laid out as brickPoolDim * BRICK_STORE texels
         gl::Texture3D brickIdTex;     // R16UI, same layout as brickPoolTex, primitive slot of the nearest primitive (for color)
-        gl::Texture3D brickSignTex;   // R8, brick grid, sign of the brick's origin, used to determine solid/empty when inactive
-        gl::Texture3D lookupTex;      // RGBA32F, brick grid, xyz = this brick's origin in pool space, w = 1 active / 0 empty / -1 solid
-        gl::Texture3D dirtyTex;       // R8, brick grid, 1 = brick still has to be rebaked
 
-        void EnsureBrickResourcesSized();
+        void EnsureBrickResourcesSized(OctreeLevel& level);
         void ResetFreeList();
 
         // chunked bake (scratch, sized from the VRAM budget)
@@ -86,7 +104,6 @@ namespace core {
         ComputeShader* seedFixShader = nullptr;
 
         int chunkBricks = 1;                     // bricks per chunk axis
-        glm::ivec3 chunkGridDim{1};
         glm::ivec3 scratchDim{0};          // allocated scratch size in voxels
         gl::Texture3D seedTexA, seedTexB;        // RGBA16F seed ping-pong, chunk-local coordinates
         gl::Texture3D* finalSeedTex = nullptr;
@@ -97,19 +114,16 @@ namespace core {
         gl::StorageBuffer chunkFlagsBuffer{gl::ssbo::ChunkFlags}; // SSBO binding 3, one uint per chunk, written by the coarse pass
 
         // dirty bookkeeping on the CPU, one box (in bricks) per chunk
-        struct BrickBox {
-            glm::ivec3 min{0}, max{-1};
-            bool Empty() const { return max.x < min.x; }
-        };
-        std::vector<BrickBox> chunkDirty; // mirrors dirtyTex
         bool fullRebakeRequested = false;
 
         void EnsureScratchSized();
+        void RechunkLevel(OctreeLevel& level); // split a level into chunks of chunkBricks, keeps its pending dirty boxes
         void Fill(gl::Texture3D& r8Tex, glm::ivec3 origin, glm::ivec3 dim, float value);
-        void StampDirty(glm::ivec3 brickMin, glm::ivec3 brickMax);
+        void StampDirty(OctreeLevel& level, glm::ivec3 brickMin, glm::ivec3 brickMax);
         void StampDirtyWorld(const AABB& bounds);
-        void BakeChunkBox(const BrickBox& box);
-        int ProcessDirtyChunks(int maxChunks, glm::vec3 cameraPos);
+        void BakeLevel(OctreeLevel& level); // full bake of one level: coarse pass, settle, then every flagged chunk
+        void BakeChunkBox(OctreeLevel& level, const BrickBox& box);
+        int ProcessDirtyChunks(OctreeLevel& level, int maxChunks, glm::vec3 cameraPos);
         void SetCommonClassifyUniforms();
         void ReadBackFreeList();
 
@@ -192,20 +206,20 @@ namespace core {
 
         // general methods
         void EnsureVolumeSized(glm::ivec3 newResolution);
-        void ApplyBakeBudget(); // recompute the chunk size from bakeBudgetMiB, keeps pending dirty marks
-        void Bake(const std::vector<Primitive*>& primitives); // full bake, synchronous
+        void ApplyBakeBudget(); // recompute the chunk size from bakeBudgetMiB for all levels, keeps pending dirty marks
+        void Bake(const std::vector<Primitive*>& primitives); // full bake of every level, synchronous
         void UpdateDynamic(const std::vector<Primitive*>& primitives, glm::vec3 cameraPos); // per frame, before Render
         void Render(GLuint targetFbo, GLuint sceneColorTex, GLuint sceneDepthTex, Camera* cam);
         void RenderDebugSlice(GLuint targetFbo, gl::Texture3D* textureToView);
         void RenderDebugTexture(GLuint targetFbo, gl::Texture2D* textureToView);
 
         void SetWorldBounds(glm::vec3 min, glm::vec3 max);
+        glm::vec3 GetWorldMin() {return worldMin; }
+        glm::vec3 GetWorldMax() {return worldMax; }
         void MarkDirty() {dirty = true;}
         bool IsDirty() const { return dirty; }
 
         glm::ivec3 GetResolution() const { return resolution; }
-        glm::vec3 GetWorldMin() const { return worldMin; }
-        glm::vec3 GetWorldMax() const { return worldMax; }
         int GetChunkBricks() const { return chunkBricks; }
         int GetPoolCapacity() const { return brickPoolDim.x * brickPoolDim.y * brickPoolDim.z; }
 
