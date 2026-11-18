@@ -12,13 +12,13 @@ layout(std430, binding = 3) readonly buffer ChunkFlags {
     uint chunkHasCandidates[];
 };
 
-uniform vec3 _GridResolution;
+uniform int _GridBricks;
 uniform int _ChunkBricks;
 uniform vec3 _ChunkGridDim;
 
 void main() {
     ivec3 brick = ivec3(gl_GlobalInvocationID);
-    if (any(greaterThanEqual(brick, ivec3(_GridResolution)))) return;
+    if (any(greaterThanEqual(brick, ivec3(_GridBricks)))) return;
 
     ivec3 chunk = brick / _ChunkBricks;
     ivec3 cg = ivec3(_ChunkGridDim);

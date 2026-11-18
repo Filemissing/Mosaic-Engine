@@ -11,9 +11,9 @@ layout(r16ui, binding = 4) uniform readonly uimage3D idTex;       // chunk-local
 layout(r16ui, binding = 5) uniform writeonly uimage3D brickIdOut;
 layout(r8, binding = 6) uniform readonly image3D dirtyTex;
 
-uniform vec3 _WorldMin;
-uniform vec3 _WorldMax;
-uniform vec3 _Resolution;
+uniform vec3 _GridOrigin;
+uniform float _VoxelSize;
+uniform int _GridBricks;
 
 uniform vec3 _BoxMin;
 uniform vec3 _BoxDim;
@@ -35,12 +35,11 @@ void main() {
     if (lookup.w < 0.5) return; // inactive or pool full — no pool data to write
 
     ivec3 sourceVoxel = brickIndex * BRICK_CORE + localOffset;
-    sourceVoxel = clamp(sourceVoxel, ivec3(0), ivec3(_Resolution) - ivec3(1));
+    sourceVoxel = clamp(sourceVoxel, ivec3(0), ivec3(_GridBricks * BRICK_CORE - 1));
     ivec3 local = sourceVoxel - ivec3(_ChunkVoxelOrigin);
 
     vec4 seed = imageLoad(finalSeeds, local);
-    vec3 voxelSize = (_WorldMax - _WorldMin) / _Resolution;
-    float dist = (seed.w > 0.5) ? length((vec3(local) - seed.xyz) * voxelSize) : _Truncation;
+    float dist = (seed.w > 0.5) ? length((vec3(local) - seed.xyz) * _VoxelSize) : _Truncation;
     dist = min(dist, _Truncation);
 
     float sign = imageLoad(signTex, local).r;

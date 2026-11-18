@@ -22,20 +22,23 @@ layout(std430, binding = 0) readonly buffer PrimitiveBuffer {
 };
 uniform int primitiveCount;
 
-uniform vec3 _WorldMin;
-uniform vec3 _WorldMax;
+// LOD levels
+uniform vec3 _GridOrigin;
+uniform float _VoxelSize;
+uniform int _GridBricks;
 
-uniform vec3 _Resolution;
-uniform vec3 _GridResolution;
+// brick pool
 uniform vec3 _PoolResolution;
 uniform int BRICK_CORE;
 uniform int BRICK_STORE;
 
+// camera
 uniform mat4 _InvView;
 uniform mat4 _InvProj;
 uniform vec3 _CameraPos;
 uniform float _Far;
 
+// march parameters
 uniform int _MaxSteps;
 uniform float _MaxDist;
 uniform float _SurfDist;
@@ -60,15 +63,11 @@ vec3 rayDirection() {
 }
 
 // -- volume sampling --
-vec3 worldToUVW(vec3 p) {
-    return (p - _WorldMin) / (_WorldMax - _WorldMin);
-}
-
 float sampleVolumeRaw(vec3 p, float fallback) {
-    vec3 voxel = (p - _WorldMin) / (_WorldMax - _WorldMin) * _Resolution;
+    vec3 voxel = (p - _GridOrigin) / _VoxelSize;
 
     vec3 brickIndexF = floor(voxel / float(BRICK_CORE));
-    brickIndexF = clamp(brickIndexF, vec3(0.0), _GridResolution - 1.0);
+    brickIndexF = clamp(brickIndexF, vec3(0.0), vec3(float(_GridBricks) - 1.0));
     ivec3 brickIndex = ivec3(brickIndexF);
 
     vec4 lookup = texelFetch(_LookupTex, brickIndex, 0);
@@ -83,8 +82,7 @@ float sampleVolumeRaw(vec3 p, float fallback) {
 vec3 calcNormal(vec3 p) {
     float center = sampleVolumeRaw(p, 0.0); // p itself is always inside an allocated brick — this hit, so fallback here is moot
     // one voxel: a fixed world-space offset blurs detail finer than itself (0.5 was ~2.5 voxels at 1024^3)
-    vec3 voxelSize = (_WorldMax - _WorldMin) / _Resolution;
-    float e = min(voxelSize.x, min(voxelSize.y, voxelSize.z));
+    float e = _VoxelSize;
     return normalize(vec3(
     sampleVolumeRaw(p + vec3(e,0,0), center) - sampleVolumeRaw(p - vec3(e,0,0), center),
     sampleVolumeRaw(p + vec3(0,e,0), center) - sampleVolumeRaw(p - vec3(0,e,0), center),
@@ -95,10 +93,10 @@ vec3 calcNormal(vec3 p) {
 float sampleVolumeWithSkip(vec3 p, vec3 rd, out float skipDist) {
     skipDist = 0.0;
 
-    vec3 voxel = (p - _WorldMin) / (_WorldMax - _WorldMin) * _Resolution;
+    vec3 voxel = (p - _GridOrigin) / _VoxelSize;
 
     vec3 brickIndexF = floor(voxel / float(BRICK_CORE));
-    brickIndexF = clamp(brickIndexF, vec3(0.0), _GridResolution - 1.0);
+    brickIndexF = clamp(brickIndexF, vec3(0.0), vec3(float(_GridBricks) - 1.0));
     ivec3 brickIndex = ivec3(brickIndexF);
 
     vec4 lookup = texelFetch(_LookupTex, brickIndex, 0);
@@ -113,8 +111,8 @@ float sampleVolumeWithSkip(vec3 p, vec3 rd, out float skipDist) {
         return -1.0; // negative distance means inside surface
     } else {
         // compute this brick's world-space AABB and find where the ray exits it
-        vec3 brickWorldMin = _WorldMin + (brickIndexF * float(BRICK_CORE)) / _Resolution * (_WorldMax - _WorldMin);
-        vec3 brickWorldMax = _WorldMin + ((brickIndexF + 1.0) * float(BRICK_CORE)) / _Resolution * (_WorldMax - _WorldMin);
+        vec3 brickWorldMin = _GridOrigin + brickIndexF * float(BRICK_CORE) * _VoxelSize;
+        vec3 brickWorldMax = brickWorldMin + vec3(float(BRICK_CORE) * _VoxelSize);
 
         vec3 invD = 1.0 / rd;
         vec3 t0 = (brickWorldMin - p) * invD;
@@ -370,8 +368,8 @@ SurfaceInput makeInput(vec3 pos, vec3 normal, vec3 viewDir, float footprint, int
 // Shades a hit: the 8 voxel IDs around it give weights per primitive (Color Blend controls how hard the boundary is);
 // the two heaviest primitives are shaded with their own material and blended.
 vec3 shadeHit(vec3 pos, vec3 normal, vec3 viewDir, float footprint) {
-    vec3 voxel = (pos - _WorldMin) / (_WorldMax - _WorldMin) * _Resolution;
-    vec3 brickIndexF = clamp(floor(voxel / float(BRICK_CORE)), vec3(0.0), _GridResolution - 1.0);
+    vec3 voxel = (pos - _GridOrigin) / _VoxelSize;
+    vec3 brickIndexF = clamp(floor(voxel / float(BRICK_CORE)), vec3(0.0), vec3(float(_GridBricks) - 1.0));
     vec4 lookup = texelFetch(_LookupTex, ivec3(brickIndexF), 0);
 
     int primA = -1, primB = -1;
@@ -423,8 +421,9 @@ vec3 shadeHit(vec3 pos, vec3 normal, vec3 viewDir, float footprint) {
 
 bool intersectAABB(vec3 ro, vec3 rd, out float tEnter, out float tExit) {
     vec3 invD = 1.0 / rd;
-    vec3 t0 = (_WorldMin - ro) * invD;
-    vec3 t1 = (_WorldMax - ro) * invD;
+    vec3 gridMax = _GridOrigin + vec3(float(_GridBricks * BRICK_CORE) * _VoxelSize);
+    vec3 t0 = (_GridOrigin - ro) * invD;
+    vec3 t1 = (gridMax - ro) * invD;
     vec3 tMin = min(t0, t1);
     vec3 tMax = max(t0, t1);
     tEnter = max(max(tMin.x, tMin.y), tMin.z);

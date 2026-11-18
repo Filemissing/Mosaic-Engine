@@ -125,6 +125,7 @@ namespace core {
         void BakeChunkBox(OctreeLevel& level, const BrickBox& box);
         int ProcessDirtyChunks(OctreeLevel& level, int maxChunks, glm::vec3 cameraPos);
         void SetCommonClassifyUniforms();
+        void SetLevelUniforms(ComputeShader* shader, const OctreeLevel& level);
         void ReadBackFreeList();
 
         // final output

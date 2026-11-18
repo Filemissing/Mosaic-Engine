@@ -115,19 +115,18 @@ namespace core {
         }
     }
     void Raymarcher::EnsureBrickResourcesSized(OctreeLevel& level) {
-        glm::vec3 brickGridResolution = (resolution + glm::ivec3(BRICK_CORE - 1)) / BRICK_CORE;
-        level.brickGridResolution = brickGridResolution.x; // assume uniform cube
+        const glm::ivec3 gridBricks(level.brickGridResolution);
         const glm::ivec3 poolTexelSize = brickPoolDim * BRICK_STORE;
-        const size_t brickCount = static_cast<size_t>(brickGridResolution.x) * brickGridResolution.y * brickGridResolution.z;
+        const size_t brickCount = static_cast<size_t>(gridBricks.x) * gridBricks.y * gridBricks.z;
 
         brickPoolTex = gl::Texture3D(poolTexelSize, gl::formats::R16F,  GL_LINEAR);
         brickIdTex   = gl::Texture3D(poolTexelSize, gl::formats::R16UI, GL_NEAREST);
 
         std::vector<float> zeroLookup(brickCount * 4, 0.0f);
         std::vector<unsigned char> zeroBytes(brickCount, 0);
-        level.lookupTex    = gl::Texture3D(brickGridResolution, gl::formats::RGBA32F, GL_NEAREST, zeroLookup.data());
-        level.brickSignTex = gl::Texture3D(brickGridResolution, gl::formats::R8,      GL_NEAREST, zeroBytes.data());
-        level.dirtyTex     = gl::Texture3D(brickGridResolution, gl::formats::R8,      GL_NEAREST, zeroBytes.data());
+        level.lookupTex    = gl::Texture3D(gridBricks, gl::formats::RGBA32F, GL_NEAREST, zeroLookup.data());
+        level.brickSignTex = gl::Texture3D(gridBricks, gl::formats::R8,      GL_NEAREST, zeroBytes.data());
+        level.dirtyTex     = gl::Texture3D(gridBricks, gl::formats::R8,      GL_NEAREST, zeroBytes.data());
 
         ResetFreeList();
     }
@@ -198,7 +197,7 @@ namespace core {
         }
     }
     void Raymarcher::EnsureScratchSized() {
-        glm::ivec3 dim = glm::min(glm::ivec3(chunkBricks * BRICK_CORE + 2 * HALO), resolution);
+        glm::ivec3 dim = glm::min(glm::ivec3(chunkBricks * BRICK_CORE + 2 * HALO), glm::ivec3(treeLevels[0].brickGridResolution * BRICK_CORE));
         if (dim == scratchDim && seedTexA.Id() != 0) return;
         scratchDim = dim;
 
@@ -315,10 +314,13 @@ namespace core {
     // ---------------------------------------------------------------------------------------------------------
     // baking
     // ---------------------------------------------------------------------------------------------------------
+    void Raymarcher::SetLevelUniforms(ComputeShader* shader, const OctreeLevel& level) {
+        shader->SetVec3("_GridOrigin", level.gridOrigin);
+        shader->SetFloat("_VoxelSize", level.voxelSize);
+        shader->SetInt("_GridBricks", level.brickGridResolution);
+    }
     void Raymarcher::SetCommonClassifyUniforms() {
-        classifyShader->SetVec3("_WorldMin", worldMin);
-        classifyShader->SetVec3("_WorldMax", worldMax);
-        classifyShader->SetVec3("_Resolution", resolution);
+        SetLevelUniforms(classifyShader, treeLevels[0]);
         classifyShader->SetInt("_Octaves", octaves);
         classifyShader->SetFloat("_WarpStrength", warpStrength);
         classifyShader->SetFloat("_Lacunarity", lacunarity);
@@ -341,20 +343,19 @@ namespace core {
     // Rebakes the dirty bricks inside one box (at most one chunk): classify the box plus a HALO of context,
     // jump-flood within it, give back the old pool slots, allocate new ones and write the pool.
     void Raymarcher::BakeChunkBox(OctreeLevel& level, const BrickBox& box) {
-        const glm::vec3 voxelSize = (worldMax - worldMin) / glm::vec3(resolution);
-        const float truncation = HALO * std::min({voxelSize.x, voxelSize.y, voxelSize.z});
+        const float truncation = HALO * level.voxelSize;
         const glm::ivec3 boxDim = box.max - box.min + 1;
 
         // scratch region: the box's voxels (plus the apron) and HALO voxels around it, clipped to the volume
         glm::ivec3 vMin = glm::max(box.min * BRICK_CORE - HALO, glm::ivec3(0));
-        glm::ivec3 vMax = glm::min((box.max + 1) * BRICK_CORE + HALO, resolution);
+        glm::ivec3 vMax = glm::min((box.max + 1) * BRICK_CORE + HALO, glm::ivec3(level.brickGridResolution * BRICK_CORE));
         glm::ivec3 dim = vMax - vMin;
         glm::ivec3 flagOrigin = box.min - 2;
         glm::ivec3 flagDim = boxDim + 4;
 
         // only primitives that can reach the scratch region matter here
-        glm::vec3 regionMin = worldMin + glm::vec3(vMin) * voxelSize - voxelSize;
-        glm::vec3 regionMax = worldMin + glm::vec3(vMax) * voxelSize + voxelSize;
+        glm::vec3 regionMin = level.gridOrigin + glm::vec3(vMin) * level.voxelSize - level.voxelSize;
+        glm::vec3 regionMax = level.gridOrigin + glm::vec3(vMax) * level.voxelSize + level.voxelSize;
         std::vector<uint32_t> indices;
         for (uint32_t s = 0; s < slots.size(); s++) {
             const PrimitiveSlot& slot = slots[s];
@@ -445,9 +446,7 @@ namespace core {
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
         // ---- finalize: one invocation per pool texel of the box's bricks ----
-        jfaFinalizeShader->SetVec3("_WorldMin", worldMin);
-        jfaFinalizeShader->SetVec3("_WorldMax", worldMax);
-        jfaFinalizeShader->SetVec3("_Resolution", resolution);
+        SetLevelUniforms(jfaFinalizeShader, level);
         jfaFinalizeShader->SetVec3("_BoxMin", glm::vec3(box.min));
         jfaFinalizeShader->SetVec3("_BoxDim", glm::vec3(boxDim));
         jfaFinalizeShader->SetVec3("_ChunkVoxelOrigin", glm::vec3(vMin));
@@ -477,10 +476,9 @@ namespace core {
 
         if (maxChunks > 0 && static_cast<int>(work.size()) > maxChunks) {
             // nearest chunks first; the rest keep their marks (GPU bits and CPU boxes) for later frames
-            glm::vec3 voxelSize = (worldMax - worldMin) / glm::vec3(resolution);
             auto distance2 = [&](int i) {
                 glm::vec3 centerVoxel = glm::vec3(level.chunkDirty[i].min + level.chunkDirty[i].max + 1) * (0.5f * BRICK_CORE);
-                glm::vec3 d = worldMin + centerVoxel * voxelSize - cameraPos;
+                glm::vec3 d = level.gridOrigin + centerVoxel * level.voxelSize - cameraPos;
                 return glm::dot(d, d);
             };
             std::partial_sort(work.begin(), work.begin() + maxChunks, work.end(),
@@ -567,7 +565,6 @@ namespace core {
 
         SetCommonClassifyUniforms();
         classifyShader->SetInt("_CoarsePass", 1);
-        classifyShader->SetVec3("_GridResolution", glm::vec3(gridBricks));
         classifyShader->SetInt("_ChunkBricks", chunkBricks);
         classifyShader->SetVec3("_ChunkGridDim", glm::vec3(chunkGridDim));
         classifyShader->SetFloat("_CoarseMargin", coarseMargin);
@@ -578,7 +575,7 @@ namespace core {
         classifyShader->Dispatch(g.x, g.y, g.z);
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
-        settleShader->SetVec3("_GridResolution", glm::vec3(gridBricks));
+        settleShader->SetInt("_GridBricks", gridBricks.x);
         settleShader->SetInt("_ChunkBricks", chunkBricks);
         settleShader->SetVec3("_ChunkGridDim", glm::vec3(chunkGridDim));
         level.brickSignTex.BindImage(0, GL_READ_ONLY);
@@ -771,10 +768,10 @@ namespace core {
         marchMaterial->SetTexture3D("_BrickPoolTex", brickPoolTex.Id());
         marchMaterial->SetTexture3D("_BrickIdTex", brickIdTex.Id());
 
-        marchMaterial->SetVec3("_WorldMin", worldMin);
-        marchMaterial->SetVec3("_WorldMax", worldMax);
+        marchMaterial->SetVec3("_GridOrigin", treeLevels[0].gridOrigin);
+        marchMaterial->SetFloat("_VoxelSize", treeLevels[0].voxelSize);
+        marchMaterial->SetInt("_GridBricks", treeLevels[0].brickGridResolution);
 
-        marchMaterial->SetVec3("_Resolution", resolution);
         marchMaterial->SetVec3("_GridResolution", glm::vec3(treeLevels[0].brickGridResolution));
         marchMaterial->SetVec3("_PoolResolution", glm::vec3(brickPoolDim * BRICK_STORE));
         marchMaterial->SetInt("BRICK_CORE", BRICK_CORE);

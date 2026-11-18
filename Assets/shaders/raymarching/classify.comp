@@ -23,9 +23,9 @@ uniform int BRICK_CORE;
 uniform int _CoarsePass;
 
 // world bounds
-uniform vec3 _WorldMin;
-uniform vec3 _WorldMax;
-uniform vec3 _Resolution;
+uniform vec3 _GridOrigin; 
+uniform float _VoxelSize; 
+uniform int _GridBricks;
 
 // chunk pass
 uniform vec3 _ChunkVoxelOrigin; // world voxel of scratch texel (0,0,0)
@@ -36,7 +36,6 @@ uniform vec3 _CoreBrickMin;     // bricks being rebaked (inclusive)
 uniform vec3 _CoreBrickMax;
 
 // coarse pass
-uniform vec3 _GridResolution;
 uniform int _ChunkBricks;
 uniform vec3 _ChunkGridDim;
 uniform float _CoarseMargin;
@@ -413,11 +412,10 @@ Hit mapScene(vec3 p) {
 // brick (fine terrain detail can fool a single sample) can't turn into a solid block or a hole.
 void coarseMain() {
     ivec3 brick = ivec3(gl_GlobalInvocationID);
-    if (any(greaterThanEqual(brick, ivec3(_GridResolution)))) return;
+    if (any(greaterThanEqual(brick, ivec3(_GridBricks)))) return;
 
-    vec3 voxelSize = (_WorldMax - _WorldMin) / _Resolution;
-    vec3 brickCenter = _WorldMin + (vec3(brick * BRICK_CORE) + 0.5 * float(BRICK_CORE)) * voxelSize;
-    float brickHalfDiagonal = 0.5 * length(float(BRICK_CORE) * voxelSize); // center to corner
+    vec3 brickCenter = _GridOrigin + (vec3(brick * BRICK_CORE) + 0.5 * float(BRICK_CORE)) * _VoxelSize;
+    float brickHalfDiagonal = 0.5 * length(float(BRICK_CORE) * _VoxelSize); // center to corner
 
     float centerDistance = mapScene(brickCenter).dist;
 
@@ -450,9 +448,8 @@ void main() {
     if (any(greaterThanEqual(scratchVoxel, ivec3(_ChunkDim)))) return; // dispatch may overshoot the scratch region
     ivec3 worldVoxel = scratchVoxel + ivec3(_ChunkVoxelOrigin);
 
-    vec3 volumeUvw = vec3(worldVoxel) / vec3(_Resolution);
-    vec3 worldPos = _WorldMin + volumeUvw * (_WorldMax - _WorldMin);
-    float voxelDiagonal = length((_WorldMax - _WorldMin) / _Resolution); // the largest distance inside a voxel (corner to corner)
+    vec3 worldPos = _GridOrigin + vec3(worldVoxel) * _VoxelSize;
+    float voxelDiagonal = sqrt(3.0) * _VoxelSize; // the largest distance inside a voxel (corner to corner)
 
     Hit hit = mapScene(worldPos);
     float isInside = (hit.dist <= 0.0) ? 1.0 : 0.0;           // every voxel gets this
@@ -478,8 +475,7 @@ void main() {
             if (stepLength > voxelDiagonal) newtonStep *= voxelDiagonal / stepLength;
             vec3 surfaceWorldPos = worldPos - newtonStep;
 
-            vec3 surfaceUvw = (surfaceWorldPos - _WorldMin) / (_WorldMax - _WorldMin);
-            seedPosition = surfaceUvw * vec3(_Resolution);
+            seedPosition = (surfaceWorldPos - _GridOrigin) / _VoxelSize;
         }
     }
 
