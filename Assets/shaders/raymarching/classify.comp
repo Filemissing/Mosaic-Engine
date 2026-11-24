@@ -23,8 +23,8 @@ uniform int BRICK_CORE;
 uniform int _CoarsePass;
 
 // world bounds
-uniform vec3 _GridOrigin; 
-uniform float _VoxelSize; 
+uniform vec3 _GridOrigin;
+uniform float _VoxelSize;
 uniform int _GridBricks;
 
 // chunk pass

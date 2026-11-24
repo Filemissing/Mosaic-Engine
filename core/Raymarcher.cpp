@@ -94,16 +94,20 @@ namespace core {
         resolution = newResolution;
 
         treeLevels.clear();
-        treeLevels.resize(1); // more levels in step 2
-        OctreeLevel& level0 = treeLevels[0];
-        level0.voxelSize = (worldMax.x - worldMin.x) / static_cast<float>(resolution.x);
-        level0.gridOrigin = worldMin;
-        level0.brickGridResolution = (resolution.x + BRICK_CORE - 1) / BRICK_CORE;
+        treeLevels.resize(treeLevelCount);
 
-        for (auto& level : treeLevels) {
-            EnsureBrickResourcesSized(level);
-            level.chunkDirty.clear(); // everything is rebaked
+        const float finestVoxelSize = (worldMax.x - worldMin.x) / static_cast<float>(resolution.x);
+        const int finestGridBricks = (resolution.x + BRICK_CORE - 1) / BRICK_CORE;
+
+        for (int levelIndex = 0; levelIndex < treeLevelCount; levelIndex++) {
+            OctreeLevel& level = treeLevels[levelIndex];
+            const int scale = 1 << levelIndex;                         // 1, 2, 4, 8, ...
+            level.voxelSize = finestVoxelSize * static_cast<float>(scale);
+            level.gridOrigin = worldMin;                               // every level covers the same root box
+            level.brickGridResolution = finestGridBricks / scale;      // 128, 64, 32, 16, 8
+            EnsureLevelResourcesSized(level);
         }
+        EnsureBrickPoolSized();
         ApplyBakeBudget();
 
         for (auto& slot : slots) slot.baked = false;
@@ -114,21 +118,23 @@ namespace core {
             std::cerr << "GL error after EnsureVolumeSized(): 0x" << std::hex << e << std::dec << std::endl;
         }
     }
-    void Raymarcher::EnsureBrickResourcesSized(OctreeLevel& level) {
-        const glm::ivec3 gridBricks(level.brickGridResolution);
+    void Raymarcher::EnsureBrickPoolSized() {
         const glm::ivec3 poolTexelSize = brickPoolDim * BRICK_STORE;
-        const size_t brickCount = static_cast<size_t>(gridBricks.x) * gridBricks.y * gridBricks.z;
 
         brickPoolTex = gl::Texture3D(poolTexelSize, gl::formats::R16F,  GL_LINEAR);
         brickIdTex   = gl::Texture3D(poolTexelSize, gl::formats::R16UI, GL_NEAREST);
+
+        ResetFreeList();
+    }
+    void Raymarcher::EnsureLevelResourcesSized(OctreeLevel& level) {
+        const glm::ivec3 gridBricks(level.brickGridResolution);
+        const size_t brickCount = static_cast<size_t>(gridBricks.x) * gridBricks.y * gridBricks.z;
 
         std::vector<float> zeroLookup(brickCount * 4, 0.0f);
         std::vector<unsigned char> zeroBytes(brickCount, 0);
         level.lookupTex    = gl::Texture3D(gridBricks, gl::formats::RGBA32F, GL_NEAREST, zeroLookup.data());
         level.brickSignTex = gl::Texture3D(gridBricks, gl::formats::R8,      GL_NEAREST, zeroBytes.data());
         level.dirtyTex     = gl::Texture3D(gridBricks, gl::formats::R8,      GL_NEAREST, zeroBytes.data());
-
-        ResetFreeList();
     }
     void Raymarcher::ResetFreeList() {
         const int capacity = GetPoolCapacity();
@@ -320,7 +326,6 @@ namespace core {
         shader->SetInt("_GridBricks", level.brickGridResolution);
     }
     void Raymarcher::SetCommonClassifyUniforms() {
-        SetLevelUniforms(classifyShader, treeLevels[0]);
         classifyShader->SetInt("_Octaves", octaves);
         classifyShader->SetFloat("_WarpStrength", warpStrength);
         classifyShader->SetFloat("_Lacunarity", lacunarity);
@@ -370,6 +375,7 @@ namespace core {
 
         // ---- classify ----
         SetCommonClassifyUniforms();
+        SetLevelUniforms(classifyShader, level);
         classifyShader->SetInt("_CoarsePass", 0);
         classifyShader->SetVec3("_ChunkVoxelOrigin", glm::vec3(vMin));
         classifyShader->SetVec3("_ChunkDim", glm::vec3(dim));
@@ -469,30 +475,46 @@ namespace core {
         glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT | GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
     }
 
-    int Raymarcher::ProcessDirtyChunks(OctreeLevel& level, int maxChunks, glm::vec3 cameraPos) {
-        std::vector<int> work;
-        for (int i = 0; i < static_cast<int>(level.chunkDirty.size()); i++)
-            if (!level.chunkDirty[i].Empty()) work.push_back(i);
+    int Raymarcher::ProcessDirtyChunks(int maxChunks, glm::vec3 cameraPos) {
+        struct DirtyChunk {
+            int levelIndex;
+            int chunkIndex;
+        };
+        std::vector<DirtyChunk> work;
+
+        for (int i = 0; i < treeLevels.size(); i++) {
+            auto& level = treeLevels[i];
+            for (int l = 0; l < static_cast<int>(level.chunkDirty.size()); l++) {
+                if (!level.chunkDirty[l].Empty()) {
+                    work.push_back(DirtyChunk{i, l});
+                }
+            }
+        }
+
 
         if (maxChunks > 0 && static_cast<int>(work.size()) > maxChunks) {
             // nearest chunks first; the rest keep their marks (GPU bits and CPU boxes) for later frames
-            auto distance2 = [&](int i) {
-                glm::vec3 centerVoxel = glm::vec3(level.chunkDirty[i].min + level.chunkDirty[i].max + 1) * (0.5f * BRICK_CORE);
+            auto distance2 = [&](const DirtyChunk& chunk) {
+                const auto& level = treeLevels[chunk.levelIndex];
+                glm::vec3 centerVoxel = glm::vec3(level.chunkDirty[chunk.chunkIndex].min + level.chunkDirty[chunk.chunkIndex].max + 1) * (0.5f * BRICK_CORE);
                 glm::vec3 d = level.gridOrigin + centerVoxel * level.voxelSize - cameraPos;
                 return glm::dot(d, d);
             };
-            std::partial_sort(work.begin(), work.begin() + maxChunks, work.end(),
-                              [&](int a, int b) { return distance2(a) < distance2(b); });
+            std::sort(work.begin(), work.end(), [&](DirtyChunk& a, DirtyChunk& b) { return distance2(a) < distance2(b); });
             work.resize(maxChunks);
         }
 
-        for (int i : work) {
-            BakeChunkBox(level, level.chunkDirty[i]);
-            level.chunkDirty[i] = BrickBox{};
+        for (auto& chunk : work) {
+            auto& level = treeLevels[chunk.levelIndex];
+            BakeChunkBox(level, level.chunkDirty[chunk.chunkIndex]);
+            level.chunkDirty[chunk.chunkIndex] = BrickBox{};
         }
 
         pendingDirtyChunks = 0;
-        for (const auto& box : level.chunkDirty) if (!box.Empty()) pendingDirtyChunks++;
+        for (const auto& level : treeLevels)
+            for (const auto& box : level.chunkDirty)
+                if (!box.Empty()) pendingDirtyChunks++;
+
         lastChunksProcessed = static_cast<int>(work.size());
         if (!work.empty()) ReadBackFreeList();
         return lastChunksProcessed;
@@ -525,7 +547,9 @@ namespace core {
 
         // the pool is shared by all levels: empty it once, before any level takes slots from it
         ResetFreeList();
-
+        for (OctreeLevel& level : treeLevels) {
+            level.chunkDirty.assign(level.chunkDirty.size(), BrickBox{});
+        }
         for (OctreeLevel& level : treeLevels) {
             BakeLevel(level);
         }
@@ -564,6 +588,7 @@ namespace core {
         UploadPrimitiveIndices(all);
 
         SetCommonClassifyUniforms();
+        SetLevelUniforms(classifyShader, level);
         classifyShader->SetInt("_CoarsePass", 1);
         classifyShader->SetInt("_ChunkBricks", chunkBricks);
         classifyShader->SetVec3("_ChunkGridDim", glm::vec3(chunkGridDim));
@@ -603,7 +628,7 @@ namespace core {
         }
 
         // ---- chunk pipeline for every flagged chunk, no per-frame limit ----
-        ProcessDirtyChunks(level, 0, glm::vec3(0));
+        ProcessDirtyChunks(0, glm::vec3(0));
     }
 
     // Materials only affect shading, never the baked volume: edits apply without a rebake. A new set of surface
@@ -662,8 +687,7 @@ namespace core {
 
         bool timed = !m_partialQueryInFlight;
         if (timed) glQueryCounter(m_partialQuery[0], GL_TIMESTAMP);
-        for (auto& level : treeLevels)
-            ProcessDirtyChunks(level, maxRebakeChunksPerFrame, cameraPos);
+        ProcessDirtyChunks(maxRebakeChunksPerFrame, cameraPos);
         if (timed) {
             glQueryCounter(m_partialQuery[1], GL_TIMESTAMP);
             m_partialQueryInFlight = true;
@@ -764,15 +788,24 @@ namespace core {
 
         marchMaterial->SetTexture2D("_MainTex", sceneColorTex);
         marchMaterial->SetTexture2D("_SceneDepth", sceneDepthTex);
-        marchMaterial->SetTexture3D("_LookupTex", treeLevels[0].lookupTex.Id());
         marchMaterial->SetTexture3D("_BrickPoolTex", brickPoolTex.Id());
         marchMaterial->SetTexture3D("_BrickIdTex", brickIdTex.Id());
 
-        marchMaterial->SetVec3("_GridOrigin", treeLevels[0].gridOrigin);
-        marchMaterial->SetFloat("_VoxelSize", treeLevels[0].voxelSize);
-        marchMaterial->SetInt("_GridBricks", treeLevels[0].brickGridResolution);
+        constexpr int MAX_LEVELS = 8; // same as march.frag
 
-        marchMaterial->SetVec3("_GridResolution", glm::vec3(treeLevels[0].brickGridResolution));
+        const int levelCount = static_cast<int>(treeLevels.size());
+        marchMaterial->SetInt("_LevelCount", levelCount);
+        for (int levelIndex = 0; levelIndex < MAX_LEVELS; levelIndex++) {
+            const OctreeLevel& level = treeLevels[std::min(levelIndex, levelCount - 1)];
+            const std::string index = "[" + std::to_string(levelIndex) + "]";
+            marchMaterial->SetVec3("_LevelGridOrigin" + index, level.gridOrigin);
+            marchMaterial->SetFloat("_LevelVoxelSize" + index, level.voxelSize);
+            marchMaterial->SetInt("_LevelGridBricks" + index, level.brickGridResolution);
+            marchMaterial->SetTexture3D("_LookupTex" + std::to_string(levelIndex), level.lookupTex.Id());
+        }
+        marchMaterial->SetInt("_ForceLevel", forceLevel);
+        marchMaterial->SetInt("_ShowLevels", showLevels ? 1 : 0);
+
         marchMaterial->SetVec3("_PoolResolution", glm::vec3(brickPoolDim * BRICK_STORE));
         marchMaterial->SetInt("BRICK_CORE", BRICK_CORE);
         marchMaterial->SetInt("BRICK_STORE", BRICK_STORE);

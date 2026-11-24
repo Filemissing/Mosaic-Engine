@@ -40,16 +40,16 @@ namespace core {
             float voxelSize = 0.0f;
             glm::vec3 gridOrigin{0.0f};
             int brickGridResolution = 0;
-            gl::Texture3D brickSignTex;   // R8, brick grid, sign of the brick's origin, used to determine solid/empty when inactive
-            gl::Texture3D lookupTex;      // RGBA32F, brick grid, xyz = this brick's origin in pool space, w = 1 active / 0 empty / -1 solid
-            gl::Texture3D dirtyTex;       // R8, brick grid, 1 = brick still has to be rebaked
-            glm::ivec3 chunkGridDim{1};      // chunks per axis
-            std::vector<BrickBox> chunkDirty; // mirrors dirtyTex
+            gl::Texture3D brickSignTex;         // R8, brick grid, sign of the brick's origin, used to determine solid/empty when inactive
+            gl::Texture3D lookupTex;            // RGBA32F, brick grid, xyz = this brick's origin in pool space, w = 1 active / 0 empty / -1 solid
+            gl::Texture3D dirtyTex;             // R8, brick grid, 1 = brick still has to be rebaked
+            glm::ivec3 chunkGridDim{1};   // chunks per axis
+            std::vector<BrickBox> chunkDirty;   // mirrors dirtyTex
 
             float BrickSize() const { return voxelSize * BRICK_CORE; }
             float GridSize() const { return BrickSize() * static_cast<float>(brickGridResolution); }
         };
-        int treeLevelCount = 5;             // used from step 2 on, EnsureVolumeSized creates the levels
+        int treeLevelCount = 5;
         std::vector<OctreeLevel> treeLevels; // index 0 = finest
 
         // noise generation
@@ -90,7 +90,8 @@ namespace core {
         gl::Texture3D brickPoolTex;   // R16F, holds baked distances, laid out as brickPoolDim * BRICK_STORE texels
         gl::Texture3D brickIdTex;     // R16UI, same layout as brickPoolTex, primitive slot of the nearest primitive (for color)
 
-        void EnsureBrickResourcesSized(OctreeLevel& level);
+        void EnsureBrickPoolSized();
+        void EnsureLevelResourcesSized(OctreeLevel& level);
         void ResetFreeList();
 
         // chunked bake (scratch, sized from the VRAM budget)
@@ -123,7 +124,7 @@ namespace core {
         void StampDirtyWorld(const AABB& bounds);
         void BakeLevel(OctreeLevel& level); // full bake of one level: coarse pass, settle, then every flagged chunk
         void BakeChunkBox(OctreeLevel& level, const BrickBox& box);
-        int ProcessDirtyChunks(OctreeLevel& level, int maxChunks, glm::vec3 cameraPos);
+        int ProcessDirtyChunks(int maxChunks, glm::vec3 cameraPos);
         void SetCommonClassifyUniforms();
         void SetLevelUniforms(ComputeShader* shader, const OctreeLevel& level);
         void ReadBackFreeList();
@@ -182,6 +183,8 @@ namespace core {
         float cliffRoughness = 1.0f;    // world units of small-scale jitter on the cliff walls
 
         // debug settings
+        int forceLevel = -1; // -1 = diabled/automatic
+        bool showLevels = false;
         bool debug3D = false;
         bool debug2D = false;
         int sliceZ = 0;
@@ -215,6 +218,7 @@ namespace core {
         void RenderDebugTexture(GLuint targetFbo, gl::Texture2D* textureToView);
 
         void SetWorldBounds(glm::vec3 min, glm::vec3 max);
+        int GetLevelCount() const { return treeLevelCount; };
         glm::vec3 GetWorldMin() {return worldMin; }
         glm::vec3 GetWorldMax() {return worldMax; }
         void MarkDirty() {dirty = true;}

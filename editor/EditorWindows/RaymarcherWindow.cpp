@@ -100,6 +100,10 @@ namespace editor::editorWindows {
 
         ImGui::Spacing();
         ImGui::SeparatorText("Debug Visualization");
+
+        ImGui::SliderInt("Force level", &raymarcher->forceLevel, -1, raymarcher->GetLevelCount() - 1);
+        ImGui::Checkbox("Show levels", &raymarcher->showLevels);
+
         ImGui::Checkbox("Enable 3D texture view", &raymarcher->debug3D);
 
         if (raymarcher->debug3D) {

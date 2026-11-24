@@ -23,9 +23,18 @@ layout(std430, binding = 0) readonly buffer PrimitiveBuffer {
 uniform int primitiveCount;
 
 // LOD levels
-uniform vec3 _GridOrigin;
-uniform float _VoxelSize;
-uniform int _GridBricks;
+#define MAX_LEVELS 8
+uniform int   _LevelCount;
+uniform vec3  _LevelGridOrigin[MAX_LEVELS];  // world position of grid voxel (0, 0, 0)
+uniform float _LevelVoxelSize[MAX_LEVELS];   // world size of one voxel
+uniform int   _LevelGridBricks[MAX_LEVELS];  // bricks per axis
+// one lookup texture per level, GLSL 4.3 can't index a sampler array per pixel
+uniform sampler3D _LookupTex0, _LookupTex1, _LookupTex2, _LookupTex3,
+_LookupTex4, _LookupTex5, _LookupTex6, _LookupTex7;
+
+// debug
+uniform int _ForceLevel;   // -1 = automatic, otherwise always use this level
+uniform int _ShowLevels;   // 1 = tint every hit by the level it came from
 
 // brick pool
 uniform vec3 _PoolResolution;
@@ -63,26 +72,52 @@ vec3 rayDirection() {
 }
 
 // -- volume sampling --
+vec4 fetchLookup(int level, ivec3 brickIndex) {
+    switch (level) {
+        case 0: return texelFetch(_LookupTex0, brickIndex, 0);
+        case 1: return texelFetch(_LookupTex1, brickIndex, 0);
+        case 2: return texelFetch(_LookupTex2, brickIndex, 0);
+        case 3: return texelFetch(_LookupTex3, brickIndex, 0);
+        case 4: return texelFetch(_LookupTex4, brickIndex, 0);
+        case 5: return texelFetch(_LookupTex5, brickIndex, 0);
+        case 6: return texelFetch(_LookupTex6, brickIndex, 0);
+        case 7: return texelFetch(_LookupTex7, brickIndex, 0);
+    }
+    return vec4(0.0);
+}
+
+// Everything the samplers need to know about the brick at a world position.
+struct BrickSample {
+    int level;          // the level that answered
+    vec3 voxel;         // continuous voxel coordinate in that level's grid
+    vec3 brickIndexF;   // the brick that contains it
+    vec4 lookup;        // that brick's lookup entry: xyz = pool origin, w = 1 data / 0 empty / -1 solid
+};
+
+BrickSample findBrick(vec3 p) {
+    // step 2: every level is fully baked, so the finest one (0) always answers unless a level is forced.
+    int level = (_ForceLevel >= 0) ? min(_ForceLevel, _LevelCount - 1) : 0;
+
+    BrickSample s;
+    s.level = level;
+    s.voxel = (p - _LevelGridOrigin[level]) / _LevelVoxelSize[level];
+    s.brickIndexF = clamp(floor(s.voxel / float(BRICK_CORE)), vec3(0.0), vec3(float(_LevelGridBricks[level]) - 1.0));
+    s.lookup = fetchLookup(level, ivec3(s.brickIndexF));
+    return s;
+}
 float sampleVolumeRaw(vec3 p, float fallback) {
-    vec3 voxel = (p - _GridOrigin) / _VoxelSize;
+    BrickSample s = findBrick(p);
+    if (s.lookup.w < 0.5) return fallback; // no data here — assume "same as center", contributes ~0 to the gradient
 
-    vec3 brickIndexF = floor(voxel / float(BRICK_CORE));
-    brickIndexF = clamp(brickIndexF, vec3(0.0), vec3(float(_GridBricks) - 1.0));
-    ivec3 brickIndex = ivec3(brickIndexF);
-
-    vec4 lookup = texelFetch(_LookupTex, brickIndex, 0);
-    if (lookup.w < 0.5) return fallback; // no data here — assume "same as center", contributes ~0 to the gradient
-
-    vec3 localOffset = clamp(voxel - brickIndexF * float(BRICK_CORE), 0.0, float(BRICK_STORE - 1));
-    vec3 poolTexelCoord = lookup.xyz + localOffset;
+    vec3 localOffset = clamp(s.voxel - s.brickIndexF * float(BRICK_CORE), 0.0, float(BRICK_STORE - 1));
+    vec3 poolTexelCoord = s.lookup.xyz + localOffset;
     vec3 uvw = (poolTexelCoord + 0.5) / _PoolResolution;
     return texture(_BrickPoolTex, uvw).r;
 }
 
-vec3 calcNormal(vec3 p) {
+vec3 calcNormal(vec3 p, float e) {
     float center = sampleVolumeRaw(p, 0.0); // p itself is always inside an allocated brick — this hit, so fallback here is moot
     // one voxel: a fixed world-space offset blurs detail finer than itself (0.5 was ~2.5 voxels at 1024^3)
-    float e = _VoxelSize;
     return normalize(vec3(
     sampleVolumeRaw(p + vec3(e,0,0), center) - sampleVolumeRaw(p - vec3(e,0,0), center),
     sampleVolumeRaw(p + vec3(0,e,0), center) - sampleVolumeRaw(p - vec3(0,e,0), center),
@@ -93,26 +128,20 @@ vec3 calcNormal(vec3 p) {
 float sampleVolumeWithSkip(vec3 p, vec3 rd, out float skipDist) {
     skipDist = 0.0;
 
-    vec3 voxel = (p - _GridOrigin) / _VoxelSize;
+    BrickSample s = findBrick(p);
 
-    vec3 brickIndexF = floor(voxel / float(BRICK_CORE));
-    brickIndexF = clamp(brickIndexF, vec3(0.0), vec3(float(_GridBricks) - 1.0));
-    ivec3 brickIndex = ivec3(brickIndexF);
-
-    vec4 lookup = texelFetch(_LookupTex, brickIndex, 0);
-
-    if (lookup.w >= 0.5) {
-        vec3 localOffset = clamp(voxel - brickIndexF * float(BRICK_CORE), 0.0, float(BRICK_STORE - 1));
-        vec3 poolTexelCoord = lookup.xyz + localOffset;
+    if (s.lookup.w >= 0.5) {
+        vec3 localOffset = clamp(s.voxel - s.brickIndexF * float(BRICK_CORE), 0.0, float(BRICK_STORE - 1));
+        vec3 poolTexelCoord = s.lookup.xyz + localOffset;
         vec3 uvw = (poolTexelCoord + 0.5) / _PoolResolution;
         return texture(_BrickPoolTex, uvw).r;
-    } else if (lookup.w <= -0.5) {
+    } else if (s.lookup.w <= -0.5) {
         skipDist = 0.0;
         return -1.0; // negative distance means inside surface
     } else {
         // compute this brick's world-space AABB and find where the ray exits it
-        vec3 brickWorldMin = _GridOrigin + brickIndexF * float(BRICK_CORE) * _VoxelSize;
-        vec3 brickWorldMax = brickWorldMin + vec3(float(BRICK_CORE) * _VoxelSize);
+        vec3 brickWorldMin = _LevelGridOrigin[s.level] + s.brickIndexF * float(BRICK_CORE) * _LevelVoxelSize[s.level];
+        vec3 brickWorldMax = brickWorldMin + vec3(float(BRICK_CORE) * _LevelVoxelSize[s.level]);
 
         vec3 invD = 1.0 / rd;
         vec3 t0 = (brickWorldMin - p) * invD;
@@ -367,19 +396,18 @@ SurfaceInput makeInput(vec3 pos, vec3 normal, vec3 viewDir, float footprint, int
 
 // Shades a hit: the 8 voxel IDs around it give weights per primitive (Color Blend controls how hard the boundary is);
 // the two heaviest primitives are shaded with their own material and blended.
-vec3 shadeHit(vec3 pos, vec3 normal, vec3 viewDir, float footprint) {
-    vec3 voxel = (pos - _GridOrigin) / _VoxelSize;
-    vec3 brickIndexF = clamp(floor(voxel / float(BRICK_CORE)), vec3(0.0), vec3(float(_GridBricks) - 1.0));
-    vec4 lookup = texelFetch(_LookupTex, ivec3(brickIndexF), 0);
+vec3 shadeHit(vec3 pos, vec3 viewDir, float footprint) {
+    BrickSample s = findBrick(pos);
+    vec3 normal = calcNormal(pos, _LevelVoxelSize[s.level]);
 
     int primA = -1, primB = -1;
     float weightA = 0.0, weightB = 0.0;
-    if (lookup.w >= 0.5) {
-        vec3 local = voxel - brickIndexF * float(BRICK_CORE);
+    if (s.lookup.w >= 0.5) {
+        vec3 local = s.voxel - s.brickIndexF * float(BRICK_CORE);
         ivec3 base = ivec3(clamp(floor(local), 0.0, float(BRICK_STORE - 2))); // base + 1 stays inside the brick (apron)
         vec3 f = clamp(local - vec3(base), 0.0, 1.0);
         f = clamp((f - 0.5) / max(_ColorBlend, 1e-4) + 0.5, 0.0, 1.0); // 1 = full trilinear, 0 = nearest texel
-        ivec3 poolBase = ivec3(lookup.xyz) + base;
+        ivec3 poolBase = ivec3(s.lookup.xyz) + base;
 
         int ids[8];
         float weights[8];
@@ -408,21 +436,21 @@ vec3 shadeHit(vec3 pos, vec3 normal, vec3 viewDir, float footprint) {
     }
 
     SurfaceInput inA = makeInput(pos, normal, viewDir, footprint, primA);
-    SurfaceData s = evaluateMaterial(inA.material, inA);
+    SurfaceData s2 = evaluateMaterial(inA.material, inA);
     if (primB >= 0 && weightB > 0.01) {
         SurfaceInput inB = makeInput(pos, normal, viewDir, footprint, primB);
-        s = blendSurface(s, evaluateMaterial(inB.material, inB), weightB / (weightA + weightB));
+        s2 = blendSurface(s2, evaluateMaterial(inB.material, inB), weightB / (weightA + weightB));
     }
     // a primitive's flat color still tints its material, as before materials existed
-    s.albedo *= mix(primitives[primA].color.rgb, primB >= 0 ? primitives[primB].color.rgb : primitives[primA].color.rgb,
+    s2.albedo *= mix(primitives[primA].color.rgb, primB >= 0 ? primitives[primB].color.rgb : primitives[primA].color.rgb,
                     primB >= 0 ? weightB / (weightA + weightB) : 0.0);
-    return lighting(s, pos, viewDir);
+    return lighting(s2, pos, viewDir);
 }
 
 bool intersectAABB(vec3 ro, vec3 rd, out float tEnter, out float tExit) {
     vec3 invD = 1.0 / rd;
-    vec3 gridMax = _GridOrigin + vec3(float(_GridBricks * BRICK_CORE) * _VoxelSize);
-    vec3 t0 = (_GridOrigin - ro) * invD;
+    vec3 gridMax = _LevelGridOrigin[0] + vec3(float(_LevelGridBricks[0] * BRICK_CORE) * _LevelVoxelSize[0]);
+    vec3 t0 = (_LevelGridOrigin[0] - ro) * invD;
     vec3 t1 = (gridMax - ro) * invD;
     vec3 tMin = min(t0, t1);
     vec3 tMax = max(t0, t1);
@@ -469,7 +497,6 @@ void main() {
 
     if (hit) {
         vec3 pos = ro + rd * t;
-        vec3 normal = calcNormal(pos);
         // world size of one pixel at the hit: angle between this pixel's ray and the next one's, times the distance
         vec2 pixel = 1.0 / vec2(textureSize(_MainTex, 0));
         vec2 ndc = uv * 2.0 - 1.0;
@@ -477,7 +504,7 @@ void main() {
         nextView.xyz /= nextView.w;
         vec3 nextDir = normalize((_InvView * vec4(nextView.xyz, 0.0)).xyz);
         float footprint = t * acos(clamp(dot(rd, nextDir), -1.0, 1.0));
-        FragColor = vec4(shadeHit(pos, normal, -rd, footprint), 1.0);
+        FragColor = vec4(shadeHit(pos, -rd, footprint), 1.0);
     } else {
         FragColor = texture(_MainTex, uv);
     }
